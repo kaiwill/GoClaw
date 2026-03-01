@@ -6,6 +6,9 @@ GoClaw是基于ZeroClaw的GoLang语言实现版本，并对web端进行了中文
 
 效果如下：
 
-![1772360757690](images/readme/1772360757690.png)
 
-![1772360766935](images/readme/1772360766935.png)![1772360786911](images/readme/1772360786911.png)![1772360795943](images/readme/1772360795943.png)![1772378533851](images/readme/1772378533851.png)
+![goclaw01](https://github.com/user-attachments/assets/8925e214-081a-4e54-a026-be870bd1585b)
+![goclaw02](https://github.com/user-attachments/assets/7c87fdd8-4218-4c9c-b436-149022cc11ee)
+![goclaw03](https://github.com/user-attachments/assets/b9aed7d3-148f-4655-bc65-4b5ff658a425)
+![goclaw04](https://github.com/user-attachments/assets/4b823e1d-f01d-403c-87f5-30fd833be4d6)    
+![goclaw05](https://github.com/user-attachments/assets/0b58e49a-5453-45fa-9c8d-4aaf8938d440)
