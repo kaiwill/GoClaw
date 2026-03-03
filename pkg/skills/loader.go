@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -16,6 +17,8 @@ type Skill struct {
 	Version     string                 `json:"version"`
 	Commands    []SkillCommand         `json:"commands"`
 	Metadata    map[string]interface{} `json:"metadata"`
+	Tools       []SkillTool            `json:"tools,omitempty"`
+	Prompts     []string               `json:"prompts,omitempty"`
 }
 
 type SkillCommand struct {
@@ -33,6 +36,16 @@ type SkillParameter struct {
 	Default     string `json:"default,omitempty"`
 }
 
+// SkillTool defines a tool that can be executed by a skill.
+// Similar to zeroclaw-fix-cn's SkillTool, supporting shell/http/script types.
+type SkillTool struct {
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Kind        string            `json:"kind"` // "shell", "http", "script"
+	Command     string            `json:"command"`
+	Args        map[string]string `json:"args,omitempty"`
+}
+
 type SkillLoader struct {
 	mu        sync.RWMutex
 	skills    map[string]*Skill
@@ -46,6 +59,13 @@ func NewSkillLoader(skillsDir string) *SkillLoader {
 	}
 }
 
+// GetSkillsDir returns the skills directory path.
+func (l *SkillLoader) GetSkillsDir() string {
+	return l.skillsDir
+}
+
+// LoadSkills loads skills from both skill.json and SKILL.toml/SKILL.md files.
+// This enables zero-code skill loading similar to zeroclaw-fix-cn.
 func (l *SkillLoader) LoadSkills() error {
 	if l.skillsDir == "" {
 		return nil
@@ -64,23 +84,97 @@ func (l *SkillLoader) LoadSkills() error {
 			continue
 		}
 
-		skillPath := filepath.Join(l.skillsDir, entry.Name(), "skill.json")
-		data, err := os.ReadFile(skillPath)
-		if err != nil {
-			continue
+		skillPath := filepath.Join(l.skillsDir, entry.Name())
+
+		// Try skill.json first (legacy format)
+		jsonPath := filepath.Join(skillPath, "skill.json")
+		if data, err := os.ReadFile(jsonPath); err == nil {
+			var skill Skill
+			if err := json.Unmarshal(data, &skill); err == nil {
+				l.mu.Lock()
+				l.skills[skill.Name] = &skill
+				l.mu.Unlock()
+				continue
+			}
 		}
 
-		var skill Skill
-		if err := json.Unmarshal(data, &skill); err != nil {
-			continue
+		// Try SKILL.toml (new format similar to zeroclaw-fix-cn)
+		tomlPath := filepath.Join(skillPath, "SKILL.toml")
+		if data, err := os.ReadFile(tomlPath); err == nil {
+			var manifest SkillManifest
+			if err := json.Unmarshal(data, &manifest); err == nil {
+				skill := manifest.toSkill()
+				skill.Name = entry.Name()
+				l.mu.Lock()
+				l.skills[skill.Name] = skill
+				l.mu.Unlock()
+				continue
+			}
 		}
 
-		l.mu.Lock()
-		l.skills[skill.Name] = &skill
-		l.mu.Unlock()
+		// Try SKILL.md (simple markdown format)
+		mdPath := filepath.Join(skillPath, "SKILL.md")
+		if data, err := os.ReadFile(mdPath); err == nil {
+			skill := loadSkillFromMD(entry.Name(), string(data))
+			l.mu.Lock()
+			l.skills[skill.Name] = skill
+			l.mu.Unlock()
+		}
 	}
 
 	return nil
+}
+
+// SkillManifest represents a skill loaded from SKILL.toml
+type SkillManifest struct {
+	Skill   SkillMeta   `json:"skill"`
+	Tools   []SkillTool `json:"tools,omitempty"`
+	Prompts []string    `json:"prompts,omitempty"`
+}
+
+type SkillMeta struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Version     string   `json:"version"`
+	Author      *string  `json:"author,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+}
+
+func (m *SkillManifest) toSkill() *Skill {
+	version := m.Skill.Version
+	if version == "" {
+		version = "0.1.0"
+	}
+	return &Skill{
+		Name:        m.Skill.Name,
+		Description: m.Skill.Description,
+		Version:     version,
+		Tools:       m.Tools,
+		Prompts:     m.Prompts,
+	}
+}
+
+func loadSkillFromMD(name string, content string) *Skill {
+	// Extract description from first non-heading, non-empty line
+	desc := "No description"
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if len(trimmed) > 0 && trimmed[0] == '#' {
+			continue
+		}
+		desc = trimmed
+		break
+	}
+
+	return &Skill{
+		Name:        name,
+		Description: desc,
+		Version:     "0.1.0",
+		Prompts:     []string{content},
+	}
 }
 
 func (l *SkillLoader) GetSkill(name string) (*Skill, bool) {
@@ -101,6 +195,18 @@ func (l *SkillLoader) ListSkills() []*Skill {
 	}
 
 	return skills
+}
+
+// GetAllTools returns all tools from all loaded skills.
+func (l *SkillLoader) GetAllTools() []SkillTool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
+	var tools []SkillTool
+	for _, skill := range l.skills {
+		tools = append(tools, skill.Tools...)
+	}
+	return tools
 }
 
 func (l *SkillLoader) AddSkill(skill *Skill) error {
@@ -213,5 +319,15 @@ func (s *Skill) ValidateCommand(name string, args map[string]interface{}) error 
 		}
 	}
 
+	return nil
+}
+
+// GetTool returns a specific tool from the skill by name.
+func (s *Skill) GetTool(name string) *SkillTool {
+	for _, tool := range s.Tools {
+		if tool.Name == name {
+			return &tool
+		}
+	}
 	return nil
 }

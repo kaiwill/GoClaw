@@ -170,13 +170,13 @@ stock-analyzer-skill/
 
 ### Python 依赖
 ```bash
-cd /Users/haha/.zeroclaw/workspace/skills/stock-analyzer-skill/scripts
+cd ~/.zeroclaw/workspace/skills/stock-analyzer-skill/scripts
 pip install -r requirements.txt
 ```
 
 ### Node.js 依赖
 ```bash
-cd /Users/haha/.zeroclaw/workspace/skills/stock-analyzer-skill
+cd ~/.zeroclaw/workspace/skills/stock-analyzer-skill
 npm install
 ```
 
