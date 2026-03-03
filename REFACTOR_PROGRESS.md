@@ -480,10 +480,10 @@ goclaw/
 
 ### 关键参考文件
 
-- `/Users/haha/.zeroclaw/zeroclaw-fix-cn/src/lib.rs` - Rust 项目入口
-- `/Users/haha/.zeroclaw/zeroclaw-fix-cn/Cargo.toml` - Rust 依赖管理
-- `/Users/haha/.zeroclaw/goclaw/go.mod` - Go 依赖管理
-- `/Users/haha/.zeroclaw/goclaw/pkg/types/types.go` - Go 核心类型
+- `~/.zeroclaw/zeroclaw-fix-cn/src/lib.rs` - Rust 项目入口
+- `~/.zeroclaw/zeroclaw-fix-cn/Cargo.toml` - Rust 依赖管理
+- `~/.zeroclaw/goclaw/go.mod` - Go 依赖管理
+- `~/.zeroclaw/goclaw/pkg/types/types.go` - Go 核心类型
 
 ### 等效库映射
 

@@ -9,7 +9,7 @@
 ### 1. 启动 GoClaw Daemon
 
 ```bash
-cd /Users/haha/.zeroclaw/GoClaw
+cd ~/.zeroclaw/GoClaw
 ./bin/goclaw daemon
 ```
 
@@ -160,7 +160,7 @@ fetch_stock.py (Python)
 ## 📁 文件结构
 
 ```
-/Users/haha/.zeroclaw/workspace/skills/stock-analyzer-skill/
+~/.zeroclaw/workspace/skills/stock-analyzer-skill/
 ├── index.js              # Node.js 入口文件
 ├── package.json          # Node.js 配置
 ├── skill.json            # 技能定义
@@ -191,7 +191,7 @@ fetch_stock.py (Python)
 
 ```bash
 # 测试 A股
-cd /Users/haha/.zeroclaw/workspace/skills/stock-analyzer-skill
+cd ~/.zeroclaw/workspace/skills/stock-analyzer-skill
 node index.js --stock 600519 --market sh
 
 # 测试 港股
@@ -222,22 +222,22 @@ node index.js --stock AAPL --market us
 python3 --version
 
 # 安装依赖
-cd /Users/haha/.zeroclaw/workspace/skills/stock-analyzer-skill/scripts
+cd ~/.zeroclaw/workspace/skills/stock-analyzer-skill/scripts
 pip install -r requirements.txt
 ```
 
 ### 问题：GoClaw 构建失败
 ```bash
-cd /Users/haha/.zeroclaw/GoClaw
+cd ~/.zeroclaw/GoClaw
 go mod tidy
 go build -o bin/goclaw cmd/main.go
 ```
 
 ## 🎓 更多信息
 
-- 详细文档：`/Users/haha/.zeroclaw/workspace/skills/stock-analyzer-skill/SKILL.md`
-- 使用指南：`/Users/haha/.zeroclaw/workspace/skills/stock-analyzer-skill/README.md`
-- 东方财富指南：`/Users/haha/.zeroclaw/workspace/skills/stock-analyzer-skill/references/eastmoney_guide.md`
+- 详细文档：`~/.zeroclaw/workspace/skills/stock-analyzer-skill/SKILL.md`
+- 使用指南：`~/.zeroclaw/workspace/skills/stock-analyzer-skill/README.md`
+- 东方财富指南：`~/.zeroclaw/workspace/skills/stock-analyzer-skill/references/eastmoney_guide.md`
 
 ## 📞 支持
 

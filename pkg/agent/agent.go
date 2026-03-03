@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/zeroclaw-labs/goclaw/pkg/providers"
+	"github.com/zeroclaw-labs/goclaw/pkg/skills"
 	"github.com/zeroclaw-labs/goclaw/pkg/tools"
 	"github.com/zeroclaw-labs/goclaw/pkg/types"
 )
@@ -26,7 +27,8 @@ type Agent struct {
 	temperature          float64
 	workspaceDir         string
 	identityConfig       IdentityConfig
-	skills               []Skill
+	skills               []*skills.Skill
+	skillLoader          *skills.SkillLoader
 	skillsPromptMode     SkillsPromptInjectionMode
 	autoSave             bool
 	history              []types.ConversationMessage
@@ -134,8 +136,16 @@ func (b *AgentBuilder) WithIdentityConfig(identityConfig IdentityConfig) *AgentB
 }
 
 // WithSkills sets the skills available to the agent.
-func (b *AgentBuilder) WithSkills(skills []Skill) *AgentBuilder {
+func (b *AgentBuilder) WithSkills(skills []*skills.Skill) *AgentBuilder {
 	b.agent.skills = skills
+	return b
+}
+
+// WithSkillLoader sets the skill loader for automatic skill loading.
+// When set, skills will be automatically loaded from the skills directory
+// and registered as tools - enabling zero-code skill extension.
+func (b *AgentBuilder) WithSkillLoader(skillLoader *skills.SkillLoader) *AgentBuilder {
+	b.agent.skillLoader = skillLoader
 	return b
 }
 
@@ -198,6 +208,26 @@ func (b *AgentBuilder) Build() (*Agent, error) {
 	if b.agent.workspaceDir == "" {
 		b.agent.workspaceDir = "."
 	}
+
+	// Auto-load skills from skill loader and register as tools
+	if b.agent.skillLoader != nil {
+		if err := b.agent.skillLoader.LoadSkills(); err != nil {
+			return nil, fmt.Errorf("failed to load skills: %w", err)
+		}
+		loadedSkills := b.agent.skillLoader.ListSkills()
+
+		// Add skills to agent
+		b.agent.skills = append(b.agent.skills, loadedSkills...)
+
+		// Convert skill tools to agent tools and register
+		skillTools := skills.ConvertSkillToolsToTools(loadedSkills, b.agent.skillLoader.GetSkillsDir())
+		b.agent.tools = append(b.agent.tools, skillTools...)
+
+		// Generate tool specs for skill tools
+		skillToolSpecs := skills.ConvertSkillToolsToToolSpecs(loadedSkills)
+		b.agent.toolSpecs = append(b.agent.toolSpecs, skillToolSpecs...)
+	}
+
 	return b.agent, nil
 }
 

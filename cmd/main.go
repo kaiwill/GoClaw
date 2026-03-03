@@ -19,6 +19,7 @@ import (
 	"github.com/zeroclaw-labs/goclaw/pkg/gateway"
 	"github.com/zeroclaw-labs/goclaw/pkg/memory"
 	"github.com/zeroclaw-labs/goclaw/pkg/providers"
+	"github.com/zeroclaw-labs/goclaw/pkg/skills"
 	"github.com/zeroclaw-labs/goclaw/pkg/tools"
 	"github.com/zeroclaw-labs/goclaw/pkg/types"
 )
@@ -235,10 +236,6 @@ var agentCmd = &cobra.Command{
 		tools.NewGitOperationsTool("."),
 		// Pushover notification
 		tools.NewPushoverTool(""),
-		// Email tool
-		tools.NewEmailTool("/Users/haha/.zeroclaw/workspace/skills"),
-		// Stock analyzer tool
-		tools.NewStockAnalyzerTool("/Users/haha/.zeroclaw/workspace/skills"),
 		// Memory tools
 		tools.NewMemoryStoreTool(memoryBackend),
 		tools.NewMemoryRecallTool(memoryBackend),
@@ -250,13 +247,21 @@ var agentCmd = &cobra.Command{
 			agentTools = append(agentTools, tools.CreateIpcTools(ipcDb, nil)...)
 		}
 
-	
+		// Get skills directory from config
+		skillsDir := cfg.GetSkillsDir()
+
+		// Add skill-based tools
+		agentTools = append(agentTools,
+			tools.NewEmailTool(skillsDir),
+			tools.NewStockAnalyzerTool(skillsDir),
+		)
 
 	agt, err := agent.NewAgentBuilder().
 	WithProvider(providerInstance).
 	WithModelName(model).
 	WithTemperature(temperature).
 	WithTools(agentTools).
+			WithSkillLoader(skills.NewSkillLoader(skillsDir)).
 	WithMemory(memImpl).
 	Build()
 	if err != nil {
@@ -383,10 +388,6 @@ var agentCmd = &cobra.Command{
 		tools.NewGitOperationsTool("."),
 		// Pushover notification
 		tools.NewPushoverTool(""),
-		// Email tool
-		tools.NewEmailTool("/Users/haha/.zeroclaw/workspace/skills"),
-		// Stock analyzer tool
-		tools.NewStockAnalyzerTool("/Users/haha/.zeroclaw/workspace/skills"),
 	}
 
 		// Add IPC tools if enabled
@@ -394,11 +395,21 @@ var agentCmd = &cobra.Command{
 			agentTools = append(agentTools, tools.CreateIpcTools(ipcDb, nil)...)
 		}
 
+		// Get skills directory from config
+		skillsDir := cfg.GetSkillsDir()
+
+		// Add skill-based tools
+		agentTools = append(agentTools,
+			tools.NewEmailTool(skillsDir),
+			tools.NewStockAnalyzerTool(skillsDir),
+		)
+
 		agt, err := agent.NewAgentBuilder().
 			WithProvider(providerInstance).
 			WithModelName(modelToUse).
 			WithMemory(agent.NewNoneMemoryBackend()).
 			WithTools(agentTools).
+			WithSkillLoader(skills.NewSkillLoader(skillsDir)).
 			Build()
 		if err != nil {
 			return fmt.Errorf("failed to build agent: %w", err)
@@ -406,7 +417,7 @@ var agentCmd = &cobra.Command{
 
 		// Create server address
 		addr := ":" + daemonPort
-	srv := gateway.NewServer(addr, agt)
+	srv := gateway.NewServer(addr, agt, cfg.Gateway.StaticDir)
 
 		if err := srv.Start(ctx); err != nil {
 			return fmt.Errorf("failed to start gateway: %w", err)
@@ -502,10 +513,6 @@ var daemonCmd = &cobra.Command{
 		tools.NewGitOperationsTool("."),
 		// Pushover notification
 		tools.NewPushoverTool(""),
-		// Email tool
-		tools.NewEmailTool("/Users/haha/.zeroclaw/workspace/skills"),
-		// Stock analyzer tool
-		tools.NewStockAnalyzerTool("/Users/haha/.zeroclaw/workspace/skills"),
 	}
 
 		// Add IPC tools if enabled
@@ -513,18 +520,28 @@ var daemonCmd = &cobra.Command{
 			agentTools = append(agentTools, tools.CreateIpcTools(ipcDb, nil)...)
 		}
 
+		// Get skills directory from config
+		skillsDir := cfg.GetSkillsDir()
+
+		// Add skill-based tools
+		agentTools = append(agentTools,
+			tools.NewEmailTool(skillsDir),
+			tools.NewStockAnalyzerTool(skillsDir),
+		)
+
 		agt, err := agent.NewAgentBuilder().
 			WithProvider(providerInstance).
 			WithModelName(modelToUse).
 			WithMemory(agent.NewNoneMemoryBackend()).
 			WithTools(agentTools).
+			WithSkillLoader(skills.NewSkillLoader(skillsDir)).
 			Build()
 		if err != nil {
 			return fmt.Errorf("failed to build agent: %w", err)
 		}
 
 		addr := ":" + daemonPort
-	srv := gateway.NewServer(addr, agt)
+	srv := gateway.NewServer(addr, agt, cfg.Gateway.StaticDir)
 
 		if err := srv.Start(ctx); err != nil {
 			return fmt.Errorf("failed to start gateway: %w", err)
@@ -673,6 +690,10 @@ func processChannelMessages(ctx context.Context, agt *agent.Agent, msgChan <-cha
 				return
 			}
 
+			log.Printf("=== Processing channel message ===")
+			log.Printf("  Channel: %s, Sender: %s, ReplyTarget: %s", msg.Channel, msg.Sender, msg.ReplyTarget)
+			log.Printf("  Content: %s", msg.Content)
+
 			resp, err := agt.ProcessMessage(ctx, msg.Content)
 			if err != nil {
 				log.Printf("Agent error: %v", err)
@@ -680,7 +701,8 @@ func processChannelMessages(ctx context.Context, agt *agent.Agent, msgChan <-cha
 			}
 
 			responseText := resp.TextOrEmpty()
-			log.Printf("Agent response: %s", responseText)
+			log.Printf("  Response length: %d chars", len(responseText))
+			log.Printf("  Response preview: %s", truncateString(responseText, 100))
 
 			ch, ok := channelMap[msg.Channel]
 			if !ok {
@@ -689,13 +711,22 @@ func processChannelMessages(ctx context.Context, agt *agent.Agent, msgChan <-cha
 			}
 
 			replyMsg := types.NewSendMessage(responseText, msg.ReplyTarget)
+			log.Printf("  Sending reply to %s...", msg.ReplyTarget)
 			if err := ch.Send(ctx, replyMsg); err != nil {
 				log.Printf("Failed to send reply: %v", err)
 			} else {
-				log.Printf("Reply sent successfully to %s", msg.ReplyTarget)
+				log.Printf("  Reply sent successfully!")
 			}
+			log.Printf("=== End processing ===")
 		}
 	}
+}
+
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 var channelCmd = &cobra.Command{

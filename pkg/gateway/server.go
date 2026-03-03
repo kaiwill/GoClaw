@@ -25,6 +25,7 @@ type Server struct {
 	addr           string
 	server         *http.Server
 	agent          *agent.Agent
+	staticDir      string
 	sseClients     map[string]chan *types.StreamChunk
 	sseClientsMu   sync.RWMutex
 	authMiddleware func(http.Handler) http.Handler
@@ -42,12 +43,14 @@ type Config struct {
 	ReadTimeout    time.Duration
 	WriteTimeout   time.Duration
 	MaxHeaderBytes int
+	StaticDir      string // Static files directory
 }
 
-func NewServer(addr string, agent *agent.Agent) *Server {
+func NewServer(addr string, agent *agent.Agent, staticDir string) *Server {
 	return &Server{
 		addr:       addr,
 		agent:      agent,
+		staticDir:  staticDir,
 		sseClients: make(map[string]chan *types.StreamChunk),
 		wsClients:  make(map[string]*wsClient),
 	}
@@ -71,11 +74,10 @@ func (s *Server) Start(ctx context.Context) error {
 	// Generic /api/* handler (handles all /api/* paths)
 	mux.HandleFunc("/api/", s.handleAPI)
 	
-	// Serve static files from web/dist directory
-	staticDir := "/Users/haha/.zeroclaw/goclaw/web/dist"
-	if _, err := os.Stat(staticDir); err == nil {
+	// Serve static files from configured directory
+	if _, err := os.Stat(s.staticDir); err == nil {
 		// Create file server for static assets
-		fileServer := http.FileServer(http.Dir(staticDir))
+		fileServer := http.FileServer(http.Dir(s.staticDir))
 		
 		// Handle static assets under /assets/
 		mux.Handle("/assets/", fileServer)
@@ -85,7 +87,7 @@ func (s *Server) Start(ctx context.Context) error {
 			// If it's a file request (has extension), try to serve it
 			if filepath.Ext(r.URL.Path) != "" {
 				// Try to serve the file
-				filePath := filepath.Join(staticDir, r.URL.Path)
+				filePath := filepath.Join(s.staticDir, r.URL.Path)
 				if data, err := os.ReadFile(filePath); err == nil {
 					// Determine content type
 					contentType := "application/octet-stream"
@@ -111,7 +113,7 @@ func (s *Server) Start(ctx context.Context) error {
 				}
 			}
 			// Otherwise serve index.html for SPA
-			data, err := os.ReadFile(filepath.Join(staticDir, "index.html"))
+			data, err := os.ReadFile(filepath.Join(s.staticDir, "index.html"))
 			if err != nil {
 				http.Error(w, "File not found", http.StatusNotFound)
 				return
@@ -120,7 +122,7 @@ func (s *Server) Start(ctx context.Context) error {
 			w.Write(data)
 		})
 		
-		log.Printf("Serving static files from: %s", staticDir)
+		log.Printf("Serving static files from: %s", s.staticDir)
 		log.Printf("Available at: http://localhost%s/", s.addr)
 	}
 

@@ -9,12 +9,13 @@ import (
 )
 
 type Config struct {
-	Agent         AgentConfig
-	Provider      ProviderConfig
-	Memory        MemoryConfig
-	Gateway       GatewayConfig
-	Channels      map[string]ChannelConfig
-	ChannelsRaw   string // Raw TOML content for channels
+	Agent       AgentConfig
+	Provider    ProviderConfig
+	Memory      MemoryConfig
+	Gateway     GatewayConfig
+	Channels    map[string]ChannelConfig
+	ChannelsRaw string // Raw TOML content for channels
+	SkillsDir   string // Skills directory path
 }
 
 type AgentConfig struct {
@@ -36,8 +37,9 @@ type MemoryConfig struct {
 }
 
 type GatewayConfig struct {
-	Host string
-	Port int
+	Host      string
+	Port      int
+	StaticDir string // Static files directory for web interface
 }
 
 type ChannelConfig map[string]string
@@ -50,6 +52,18 @@ type DingTalkConfig struct {
 }
 
 func Default() *Config {
+	homeDir, _ := os.UserHomeDir()
+	defaultSkillsDir := "."
+	if homeDir != "" {
+		defaultSkillsDir = filepath.Join(homeDir, ".zeroclaw", "workspace", "skills")
+	}
+
+	// Set default static directory
+	defaultStaticDir := "./web/dist"
+	if homeDir != "" {
+		defaultStaticDir = filepath.Join(homeDir, ".zeroclaw", "goclaw", "web", "dist")
+	}
+
 	return &Config{
 		Agent: AgentConfig{
 			SystemPrompt: "You are GoClaw, a helpful AI assistant.",
@@ -65,10 +79,12 @@ func Default() *Config {
 			Config:  make(map[string]string),
 		},
 		Gateway: GatewayConfig{
-			Host: "0.0.0.0",
-			Port: 8080,
+			Host:      "0.0.0.0",
+			Port:      8080,
+			StaticDir: defaultStaticDir,
 		},
-		Channels: make(map[string]ChannelConfig),
+		Channels:  make(map[string]ChannelConfig),
+		SkillsDir: defaultSkillsDir,
 	}
 }
 
@@ -93,6 +109,8 @@ func Load(configDir string) (*Config, error) {
 	cfg.Provider.APIKey = parseTomlString(content, "api_key", "")
 	cfg.Provider.BaseURL = parseTomlString(content, "base_url", "")
 	cfg.Agent.Temperature = parseTomlFloat(content, "default_temperature", cfg.Agent.Temperature)
+	cfg.SkillsDir = parseTomlString(content, "skills_dir", cfg.SkillsDir)
+	cfg.Gateway.StaticDir = parseTomlString(content, "static_dir", cfg.Gateway.StaticDir)
 
 	// If provider name contains "custom:", extract the base URL
 	if strings.HasPrefix(cfg.Provider.Name, "custom:") {
@@ -108,39 +126,39 @@ func Load(configDir string) (*Config, error) {
 // parseChannelsConfig parses [channels_config.XXX] sections
 func parseChannelsConfig(content string) map[string]ChannelConfig {
 	channels := make(map[string]ChannelConfig)
-	
+
 	// Find all [channels_config.XXX] sections
 	sectionRe := regexp.MustCompile(`(?m)^\[channels_config\.(\w+)\]`)
 	matches := sectionRe.FindAllStringSubmatchIndex(content, -1)
-	
+
 	for i, match := range matches {
 		channelName := content[match[2]:match[3]]
-		
+
 		// Get the section content (from section start to next section or EOF)
 		start := match[1]
 		end := len(content)
 		if i < len(matches)-1 {
 			end = matches[i+1][0]
 		}
-		
+
 		sectionContent := content[start:end]
-		
+
 		// Parse key-value pairs in the section
 		cfg := make(ChannelConfig)
 		kvRe := regexp.MustCompile(`(?m)^(\w+)\s*=\s*(.+)$`)
 		kvMatches := kvRe.FindAllStringSubmatch(sectionContent, -1)
-		
+
 		for _, kv := range kvMatches {
 			key := kv[1]
 			value := strings.Trim(strings.TrimSpace(kv[2]), "\"'")
 			cfg[key] = value
 		}
-		
+
 		if len(cfg) > 0 {
 			channels[channelName] = cfg
 		}
 	}
-	
+
 	return channels
 }
 
@@ -150,11 +168,11 @@ func (c *Config) GetDingTalkConfig() *DingTalkConfig {
 	if !ok {
 		return nil
 	}
-	
+
 	dt := &DingTalkConfig{}
 	dt.ClientID = cfg["client_id"]
 	dt.ClientSecret = cfg["client_secret"]
-	
+
 	// Parse allowed_users
 	if users, ok := cfg["allowed_users"]; ok {
 		// Remove brackets and parse comma-separated values
@@ -166,7 +184,7 @@ func (c *Config) GetDingTalkConfig() *DingTalkConfig {
 			}
 		}
 	}
-	
+
 	return dt
 }
 
@@ -214,4 +232,17 @@ func parseTomlFloat(content, key string, defaultValue float64) float64 {
 
 func (c *Config) GetProvider() *ProviderConfig {
 	return &c.Provider
+}
+
+// GetSkillsDir returns the skills directory path
+func (c *Config) GetSkillsDir() string {
+	if c.SkillsDir != "" {
+		return c.SkillsDir
+	}
+	// Fallback to default
+	homeDir, _ := os.UserHomeDir()
+	if homeDir != "" {
+		return filepath.Join(homeDir, ".zeroclaw", "workspace", "skills")
+	}
+	return "."
 }

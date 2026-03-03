@@ -27,6 +27,9 @@ type DingTalkChannel struct {
 	sessionWebhooks map[string]string
 	webhooksMutex   sync.RWMutex
 	httpClient      *http.Client
+	// Message deduplication
+	processedMsgs map[string]time.Time
+	msgsMutex     sync.RWMutex
 }
 
 type DingTalkGatewayRequest struct {
@@ -80,6 +83,7 @@ func NewDingTalkChannel(clientID, clientSecret string, allowedUsers []string) *D
 		allowedUsers:    normalizeAllowedUsers(allowedUsers),
 		sessionWebhooks: make(map[string]string),
 		httpClient:      &http.Client{Timeout: 30 * time.Second},
+		processedMsgs:   make(map[string]time.Time),
 	}
 }
 
@@ -279,6 +283,33 @@ func (c *DingTalkChannel) handleCallbackFrame(ctx context.Context, msgChan chan<
 		log.Printf("DingTalk: ignoring message from unauthorized user: %s", senderID)
 		return
 	}
+
+	// Check for duplicate messages - always use senderID + content for deduplication
+	// to handle cases where DingTalk sends multiple frames with different messageIds
+	msgKey := senderID + ":" + content
+	var messageID string
+	if frame.Headers != nil {
+		messageID = frame.Headers["messageId"]
+	}
+
+	c.msgsMutex.Lock()
+	if lastTime, exists := c.processedMsgs[msgKey]; exists && time.Since(lastTime) < 30*time.Second {
+		c.msgsMutex.Unlock()
+		log.Printf("DingTalk: duplicate message detected, skipping: %s (last seen %v ago)", msgKey, time.Since(lastTime))
+		return
+	}
+	// Mark as processed immediately
+	c.processedMsgs[msgKey] = time.Now()
+
+	// Clean up old entries (older than 2 minutes)
+	for k, t := range c.processedMsgs {
+		if time.Since(t) > 2*time.Minute {
+			delete(c.processedMsgs, k)
+		}
+	}
+	c.msgsMutex.Unlock()
+
+	log.Printf("DingTalk: processing new message: %s (messageId=%s)", msgKey, messageID)
 
 	chatID := c.resolveChatID(data, senderID)
 
