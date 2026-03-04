@@ -274,6 +274,12 @@ func (a *Agent) ProcessMessage(ctx context.Context, message string) (*types.Chat
 			return nil, fmt.Errorf("failed to execute tools: %w", err)
 		}
 
+		// Store tool results for response
+		var toolResultOutputs []string
+		for _, result := range toolResults {
+			toolResultOutputs = append(toolResultOutputs, result.Output)
+		}
+
 		// Add tool results to history
 		for _, result := range toolResults {
 			a.history = append(a.history, types.ConversationMessage{
@@ -325,6 +331,9 @@ func (a *Agent) ProcessMessage(ctx context.Context, message string) (*types.Chat
 		if err != nil {
 			return nil, fmt.Errorf("failed to call LLM with tool results: %w", err)
 		}
+
+		// Add tool results to response
+		response.ToolResults = toolResultOutputs
 	}
 
 	// Add assistant response to history

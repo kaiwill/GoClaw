@@ -84,6 +84,7 @@ type TokenUsage struct {
 type ChatResponse struct {
 	Text             *string     `json:"text,omitempty"`
 	ToolCalls        []ToolCall  `json:"tool_calls,omitempty"`
+	ToolResults      []string    `json:"tool_results,omitempty"`
 	Usage            *TokenUsage `json:"usage,omitempty"`
 	ReasoningContent *string     `json:"reasoning_content,omitempty"` // For thinking models
 }

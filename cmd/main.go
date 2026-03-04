@@ -701,6 +701,12 @@ func processChannelMessages(ctx context.Context, agt *agent.Agent, msgChan <-cha
 			}
 
 			responseText := resp.TextOrEmpty()
+			
+			// Add tool results to response if available
+			if len(resp.ToolResults) > 0 {
+				responseText = "📊 工具调用结果：\n\n" + strings.Join(resp.ToolResults, "\n\n") + "\n\n" + responseText
+			}
+			
 			log.Printf("  Response length: %d chars", len(responseText))
 			log.Printf("  Response preview: %s", truncateString(responseText, 100))
 
