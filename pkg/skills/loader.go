@@ -95,6 +95,9 @@ func (l *SkillLoader) LoadSkills() error {
 			decoder := json.NewDecoder(bytes.NewReader(data))
 			decoder.DisallowUnknownFields()
 			if err := decoder.Decode(&skill); err == nil {
+				// Use directory name as skill name
+				skill.Name = entry.Name()
+				
 				// Convert commands to tools if tools are not provided
 				if len(skill.Tools) == 0 && len(skill.Commands) > 0 {
 					skill.Tools = make([]SkillTool, 0, len(skill.Commands))
