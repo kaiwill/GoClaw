@@ -211,16 +211,22 @@ func (b *AgentBuilder) Build() (*Agent, error) {
 
 	// Auto-load skills from skill loader and register as tools
 	if b.agent.skillLoader != nil {
+		log.Printf("Loading skills from directory: %s", b.agent.skillLoader.GetSkillsDir())
 		if err := b.agent.skillLoader.LoadSkills(); err != nil {
 			return nil, fmt.Errorf("failed to load skills: %w", err)
 		}
 		loadedSkills := b.agent.skillLoader.ListSkills()
+		log.Printf("Loaded %d skills", len(loadedSkills))
+		for _, skill := range loadedSkills {
+			log.Printf("  - %s (%d tools)", skill.Name, len(skill.Tools))
+		}
 
 		// Add skills to agent
 		b.agent.skills = append(b.agent.skills, loadedSkills...)
 
 		// Convert skill tools to agent tools and register
 		skillTools := skills.ConvertSkillToolsToTools(loadedSkills, b.agent.skillLoader.GetSkillsDir())
+		log.Printf("Converted %d skill tools to agent tools", len(skillTools))
 		b.agent.tools = append(b.agent.tools, skillTools...)
 
 		// Generate tool specs for skill tools
@@ -274,12 +280,6 @@ func (a *Agent) ProcessMessage(ctx context.Context, message string) (*types.Chat
 			return nil, fmt.Errorf("failed to execute tools: %w", err)
 		}
 
-		// Store tool results for response
-		var toolResultOutputs []string
-		for _, result := range toolResults {
-			toolResultOutputs = append(toolResultOutputs, result.Output)
-		}
-
 		// Add tool results to history
 		for _, result := range toolResults {
 			a.history = append(a.history, types.ConversationMessage{
@@ -331,9 +331,6 @@ func (a *Agent) ProcessMessage(ctx context.Context, message string) (*types.Chat
 		if err != nil {
 			return nil, fmt.Errorf("failed to call LLM with tool results: %w", err)
 		}
-
-		// Add tool results to response
-		response.ToolResults = toolResultOutputs
 	}
 
 	// Add assistant response to history
