@@ -1,0 +1,8 @@
+goclaw
+goclaw*
+*.exe
+node_modules
+web/dist
+web/dist2
+web/.yarn
+.DS_Store
