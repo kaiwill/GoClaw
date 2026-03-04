@@ -44,7 +44,7 @@ go build -o bin/goclaw cmd/main.go
 
 ### 配置技能
 
-将 `skills` 目录中的技能复制到 GoClaw 的 workspace 目录：
+将 `skills` 目录中的技能复制到 `~/.goclaw/workspace/skills/` 目录：
 
 ```bash
 # 邮件发送技能
@@ -56,30 +56,32 @@ cp -r skills/stock-analyzer-skill ~/.goclaw/workspace/skills/
 
 #### 配置邮件发送技能
 
-编辑 `~/.goclaw/workspace/skills/email-sender-skill/index.js`：
+编辑 `~/.goclaw/workspace/skills/email-sender-skill/config.json`：
 
-```javascript
-// 第 9-10 行，修改为你的邮箱配置
-const DEFAULT_SMTP_CONFIG = {
-    host: process.env.SMTP_HOST || 'smtp.126.com',
-    port: parseInt(process.env.SMTP_PORT || '465'),
-    secure: true,
-    auth: {
-        user: process.env.SMTP_USER || 'your-email@126.com',
-        pass: process.env.SMTP_PASS || 'your-auth-code'
+```json
+{
+  "smtp": {
+    "host": "smtp.126.com",
+    "port": 465,
+    "secure": true,
+    "auth": {
+      "user": "your-email@126.com",
+      "pass": "your-auth-code"
     }
-};
+  }
+}
 ```
 
 #### 配置 AI 模型提供商
 
-编辑 `config.toml` 文件选择 AI 模型提供商：
+编辑 `~/.goclaw/config.toml` 文件选择 AI 模型提供商：
 
 **使用阿里云百炼（推荐，支持 Coding Plan Lite）：**
 
 ```toml
-default_provider = "bailian"
-default_model = "qwen-plus"
+[provider]
+name = "bailian"
+model = "qwen-plus"
 api_key = "your-bailian-api-key"
 ```
 
@@ -93,21 +95,26 @@ api_key = "your-bailian-api-key"
 
 获取 API Key：访问 [阿里云百炼控制台](https://bailian.console.aliyun.com/)
 
-**使用 Gitee AI：**
+**使用 GiteeAI（免费模型）：**
 
 ```toml
-default_provider = "custom:https://ai.gitee.com/v1"
-default_model = "GLM-4.7-Flash"
+[provider]
+name = "gitee"
+model = "GLM-4.7-Flash"
+url = "custom:https://ai.gitee.com/v1"
 api_key = "your-gitee-ai-api-key"
 ```
 
 **使用 OpenAI：**
 
 ```toml
-default_provider = "openai"
-default_model = "gpt-4"
+[provider]
+name = "openai"
+model = "gpt-4"
 api_key = "your-openai-api-key"
 ```
+
+**注意**：配置文件位置已更改为 `~/.goclaw/config.toml`，不再使用 `~/.goclaw/config.toml`
 
 ## 🚀 使用方法
 

@@ -26,6 +26,7 @@ type Server struct {
 	server         *http.Server
 	agent          *agent.Agent
 	staticDir      string
+	staticFS       http.FileSystem
 	sseClients     map[string]chan *types.StreamChunk
 	sseClientsMu   sync.RWMutex
 	authMiddleware func(http.Handler) http.Handler
@@ -44,6 +45,16 @@ type Config struct {
 	WriteTimeout   time.Duration
 	MaxHeaderBytes int
 	StaticDir      string // Static files directory
+	StaticFS       http.FileSystem
+}
+
+type prefixFS struct {
+	fs     http.FileSystem
+	prefix string
+}
+
+func (w *prefixFS) Open(name string) (http.File, error) {
+	return w.fs.Open(w.prefix + name)
 }
 
 func NewServer(addr string, agent *agent.Agent, staticDir string) *Server {
@@ -51,6 +62,16 @@ func NewServer(addr string, agent *agent.Agent, staticDir string) *Server {
 		addr:       addr,
 		agent:      agent,
 		staticDir:  staticDir,
+		sseClients: make(map[string]chan *types.StreamChunk),
+		wsClients:  make(map[string]*wsClient),
+	}
+}
+
+func NewServerWithFS(addr string, agent *agent.Agent, staticFS http.FileSystem) *Server {
+	return &Server{
+		addr:       addr,
+		agent:      agent,
+		staticFS:   staticFS,
 		sseClients: make(map[string]chan *types.StreamChunk),
 		wsClients:  make(map[string]*wsClient),
 	}
@@ -74,21 +95,35 @@ func (s *Server) Start(ctx context.Context) error {
 	// Generic /api/* handler (handles all /api/* paths)
 	mux.HandleFunc("/api/", s.handleAPI)
 	
-	// Serve static files from configured directory
-	if _, err := os.Stat(s.staticDir); err == nil {
-		// Create file server for static assets
-		fileServer := http.FileServer(http.Dir(s.staticDir))
-		
-		// Handle static assets under /assets/
-		mux.Handle("/assets/", fileServer)
+	// Serve static files from configured directory or embedded filesystem
+	var staticFS http.FileSystem
+	
+	// Prefer embedded filesystem if provided
+	if s.staticFS != nil {
+		staticFS = s.staticFS
+		log.Printf("Using embedded static files")
+	} else if s.staticDir != "" {
+		if _, err := os.Stat(s.staticDir); err == nil {
+			staticFS = http.Dir(s.staticDir)
+			log.Printf("Using static files from: %s", s.staticDir)
+		}
+	}
+	
+	if staticFS != nil {
+		// Handle static assets under /assets/ - map to web/dist/assets/
+		mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(&prefixFS{
+			fs:     staticFS,
+			prefix: "web/dist/assets",
+		})))
 		
 		// SPA fallback: serve index.html for root and any non-API, non-static paths
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			// If it's a file request (has extension), try to serve it
 			if filepath.Ext(r.URL.Path) != "" {
-				// Try to serve the file
-				filePath := filepath.Join(s.staticDir, r.URL.Path)
-				if data, err := os.ReadFile(filePath); err == nil {
+				// Try to open the file
+				f, err := staticFS.Open("web/dist" + r.URL.Path)
+				if err == nil {
+					defer f.Close()
 					// Determine content type
 					contentType := "application/octet-stream"
 					switch filepath.Ext(r.URL.Path) {
@@ -108,21 +143,21 @@ func (s *Server) Start(ctx context.Context) error {
 						contentType = "image/svg+xml"
 					}
 					w.Header().Set("Content-Type", contentType)
-					w.Write(data)
+					http.ServeContent(w, r, r.URL.Path, time.Time{}, f.(http.File))
 					return
 				}
 			}
 			// Otherwise serve index.html for SPA
-			data, err := os.ReadFile(filepath.Join(s.staticDir, "index.html"))
+			f, err := staticFS.Open("web/dist/index.html")
 			if err != nil {
 				http.Error(w, "File not found", http.StatusNotFound)
 				return
 			}
+			defer f.Close()
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Write(data)
+			http.ServeContent(w, r, "/index.html", time.Time{}, f.(http.File))
 		})
 		
-		log.Printf("Serving static files from: %s", s.staticDir)
 		log.Printf("Available at: http://localhost%s/", s.addr)
 	}
 

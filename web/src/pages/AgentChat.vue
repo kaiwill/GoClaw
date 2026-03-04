@@ -71,7 +71,7 @@
     </div>
 
     <div class="border-t border-gray-800 bg-gray-900 p-4">
-      <div class="flex items-center gap-3 max-w-4xl mx-auto">
+      <div class="flex items-center gap-3">
         <div class="flex-1 relative">
           <textarea
             ref="inputRef"

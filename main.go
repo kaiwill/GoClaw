@@ -1,9 +1,11 @@
 package main
 
 import (
+	"embed"
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -18,11 +20,15 @@ import (
 	"github.com/zeroclaw-labs/goclaw/pkg/config"
 	"github.com/zeroclaw-labs/goclaw/pkg/gateway"
 	"github.com/zeroclaw-labs/goclaw/pkg/memory"
+	"github.com/zeroclaw-labs/goclaw/pkg/onboard"
 	"github.com/zeroclaw-labs/goclaw/pkg/providers"
 	"github.com/zeroclaw-labs/goclaw/pkg/skills"
 	"github.com/zeroclaw-labs/goclaw/pkg/tools"
 	"github.com/zeroclaw-labs/goclaw/pkg/types"
 )
+
+//go:embed web/dist
+var embeddedWebFS embed.FS
 
 // memoryImpl implements the agent.Memory interface
 type memoryImpl struct {
@@ -102,29 +108,32 @@ func main() {
 
 var rootCmd = &cobra.Command{
 	Use:   "goclaw",
-	Short: "GoClaw - Zero overhead autonomous agent runtime",
-	Long: `GoClaw - Zero开销，零妥协，100% Go
+	Short: "GoClaw - 零开销，零妥协，100% Go",
+	Long: `GoClaw - 零开销，零妥协，100% Go
 
-A high-performance autonomous agent runtime written in Go,
-compatible with the ZeroClaw Rust implementation.
+一个用 Go 编写的高性能自主代理运行时，
+与 ZeroClaw Rust 实现兼容。
 
-Available Providers:
-  - openai: OpenAI GPT models
-  - anthropic: Anthropic Claude models
-  - gemini: Google Gemini models
-  - glm: Zhipu AI GLM models
-  - ollama: Local Ollama models
-  - bedrock: AWS Bedrock models
-  - openrouter: OpenRouter multi-provider access
+可用的 AI 提供商：
+  - openai: OpenAI GPT 模型
+  - anthropic: Anthropic Claude 模型
+  - gemini: Google Gemini 模型
+  - glm: 智谱 AI GLM 模型
+  - ollama: 本地 Ollama 模型
+  - bedrock: AWS Bedrock 模型
+  - openrouter: OpenRouter 多提供商访问
+  - gitee: GiteeAI 免费模型
+  - bailian: 阿里云百炼
 
-Available Channels:
+可用的消息通道：
   - telegram: Telegram Bot API
   - discord: Discord Bot API
   - slack: Slack Bot API
   - whatsapp: WhatsApp Business Cloud API
-  - matrix: Matrix Client-Server API
-  - dingtalk: DingTalk Bot API
-  - email: SMTP Email`,
+  - matrix: Matrix 客户端-服务端 API
+  - dingtalk: 钉钉 Bot API
+  - email: SMTP 邮件
+  - lark: 飞书 Bot API`,
 }
 
 var (
@@ -139,9 +148,32 @@ var (
 )
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "Path to config file")
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
+	rootCmd.SetHelpTemplate(`{{with (or .Long .Short)}}{{.}}
 
+{{end}}{{if or .Runnable .HasSubCommands}}{{.UsageString}}{{end}}`)
+	rootCmd.SetUsageTemplate(`使用方法:
+  {{.UseLine}}
+
+{{if .HasAvailableSubCommands}}
+可用命令:
+{{range .Commands}}{{if (or .IsAvailableCommand (eq .Name "help"))}}  {{rpad .Name .NamePadding }} {{if eq .Name "help"}}显示帮助信息{{else}}{{.Short}}{{end}}
+{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+标志:
+{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+全局标志:
+{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasExample}}
+示例:
+{{.Example}}{{end}}{{if .HasAvailableSubCommands}}
+使用 "{{.CommandPath}} [command] --help" 查看关于某个命令的更多信息。
+{{end}}`)
+
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
+	rootCmd.CompletionOptions.DisableDescriptions = false
+
+	rootCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "配置文件路径")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "详细输出")
+
+	rootCmd.AddCommand(onboardCmd)
 	rootCmd.AddCommand(agentCmd)
 	rootCmd.AddCommand(gatewayCmd)
 	rootCmd.AddCommand(daemonCmd)
@@ -150,15 +182,15 @@ func init() {
 	rootCmd.AddCommand(memoryCmd)
 	rootCmd.AddCommand(versionCmd)
 
-	agentCmd.Flags().StringVarP(&provider, "provider", "P", "openai", "AI provider to use")
-	agentCmd.Flags().StringVarP(&model, "model", "m", "", "Model to use (provider-specific)")
-	agentCmd.Flags().Float64Var(&temperature, "temperature", 0.7, "Temperature for generation")
-	agentCmd.Flags().BoolVarP(&daemonize, "daemon", "d", false, "Run as daemon")
+	agentCmd.Flags().StringVarP(&provider, "provider", "P", "openai", "AI 提供商")
+	agentCmd.Flags().StringVarP(&model, "model", "m", "", "模型名称 (根据提供商而定)")
+	agentCmd.Flags().Float64Var(&temperature, "temperature", 0.7, "生成温度")
+	agentCmd.Flags().BoolVarP(&daemonize, "daemon", "d", false, "以守护进程方式运行")
 
-	gatewayCmd.Flags().StringVarP(&port, "port", "p", "4096", "Port to listen on")
-	gatewayCmd.Flags().StringVarP(&provider, "provider", "P", "openai", "AI provider to use")
+	gatewayCmd.Flags().StringVarP(&port, "port", "p", "4096", "监听端口")
+	gatewayCmd.Flags().StringVarP(&provider, "provider", "P", "openai", "AI 提供商")
 
-	daemonCmd.Flags().StringVarP(&daemonPort, "port", "p", "4096", "Port for gateway (if enabled)")
+	daemonCmd.Flags().StringVarP(&daemonPort, "port", "p", "4096", "网关端口 (如果启用)")
 
 	channelCmd.AddCommand(channelListCmd)
 	channelCmd.AddCommand(channelTestCmd)
@@ -168,24 +200,30 @@ func init() {
 
 	memoryCmd.AddCommand(memoryListCmd)
 	memoryCmd.AddCommand(memoryClearCmd)
+
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Name() == "help" {
+			cmd.Short = "显示帮助信息"
+		}
+	}
 }
 
 var agentCmd = &cobra.Command{
 	Use:   "agent",
-	Short: "Start the AI agent loop",
-	Long:  "Start the GoClaw agent with the specified provider and model",
+	Short: "启动 AI 代理循环",
+	Long:  "使用指定的提供商和模型启动 GoClaw 代理",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		cfg, err := loadConfig()
 		if err != nil {
-			return fmt.Errorf("failed to load config: %w", err)
+			return fmt.Errorf("配置加载失败: %w", err)
 		}
 
 		providerInstance, err := createProvider(cfg, provider)
 		if err != nil {
-			return fmt.Errorf("failed to create provider: %w", err)
+			return fmt.Errorf("创建提供商失败: %w", err)
 		}
 
 		// Create memory backend
@@ -264,12 +302,12 @@ var agentCmd = &cobra.Command{
 			WithSkillLoader(skills.NewSkillLoader(skillsDir)).
 	WithMemory(memImpl).
 	Build()
-	if err != nil {
-		return fmt.Errorf("failed to build agent: %w", err)
-	}
+		if err != nil {
+			return fmt.Errorf("创建代理失败: %w", err)
+		}
 
 		if verbose {
-			fmt.Printf("Starting GoClaw Agent with provider: %s, model: %s\n", provider, model)
+			fmt.Printf("启动 GoClaw 代理，提供商: %s, 模型: %s\n", provider, model)
 		}
 
 		sigChan := make(chan os.Signal, 1)
@@ -277,23 +315,23 @@ var agentCmd = &cobra.Command{
 
 		if daemonize {
 			if verbose {
-				fmt.Println("Running in daemon mode...")
+				fmt.Println("以守护进程模式运行...")
 			}
 
 			select {
 			case <-sigChan:
-				fmt.Println("\nReceived shutdown signal")
+				fmt.Println("\n收到关闭信号")
 				return nil
 			case <-ctx.Done():
 				return ctx.Err()
 			}
 		} else {
-			fmt.Println("GoClaw Agent started. Type 'exit' to quit.")
+			fmt.Println("GoClaw 代理已启动。输入 'exit' 退出。")
 
 			for {
 				select {
 				case <-sigChan:
-					fmt.Println("\nShutting down...")
+					fmt.Println("\n正在关闭...")
 					return nil
 				default:
 					fmt.Print("> ")
@@ -306,7 +344,7 @@ var agentCmd = &cobra.Command{
 
 					response, err := agt.ProcessMessage(ctx, input)
 					if err != nil {
-						fmt.Printf("Error: %v\n", err)
+						fmt.Printf("错误: %v\n", err)
 						continue
 					}
 
@@ -319,8 +357,8 @@ var agentCmd = &cobra.Command{
 
 	var gatewayCmd = &cobra.Command{
 	Use:   "gateway",
-	Short: "Start the gateway server",
-	Long:  "Start the GoClaw HTTP/WebSocket gateway server",
+	Short: "启动网关服务器",
+	Long:  "启动 GoClaw HTTP/WebSocket 网关服务器",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -328,7 +366,7 @@ var agentCmd = &cobra.Command{
 
 		cfg, err := loadConfig()
 		if err != nil {
-			return fmt.Errorf("failed to load config: %w", err)
+			return fmt.Errorf("加载配置失败: %w", err)
 		}
 
 		// Use config provider if not specified via flag
@@ -339,7 +377,7 @@ var agentCmd = &cobra.Command{
 
 		providerInstance, err := createProvider(cfg, providerToUse)
 		if err != nil {
-			return fmt.Errorf("failed to create provider: %w", err)
+			return fmt.Errorf("创建提供程序失败: %w", err)
 		}
 
 		// Use config model
@@ -412,19 +450,23 @@ var agentCmd = &cobra.Command{
 			WithSkillLoader(skills.NewSkillLoader(skillsDir)).
 			Build()
 		if err != nil {
-			return fmt.Errorf("failed to build agent: %w", err)
+			return fmt.Errorf("创建代理失败: %w", err)
 		}
+
+
 
 		// Create server address
 		addr := ":" + daemonPort
-	srv := gateway.NewServer(addr, agt, cfg.Gateway.StaticDir)
+		
+		// Use embedded web files
+		srv := gateway.NewServerWithFS(addr, agt, http.FS(embeddedWebFS))
 
 		if err := srv.Start(ctx); err != nil {
-			return fmt.Errorf("failed to start gateway: %w", err)
+			return fmt.Errorf("启动网关失败: %w", err)
 		}
 
-		fmt.Printf("Gateway server started on %s\n", addr)
-		fmt.Printf("Provider: %s, Model: %s\n", providerToUse, modelToUse)
+		fmt.Printf("网关服务器已启动于 %s\n", addr)
+		fmt.Printf("提供程序: %s, 模型: %s\n", providerToUse, modelToUse)
 		fmt.Printf("HTTP API: http://localhost%s\n", addr)
 		fmt.Printf("WebSocket: ws://localhost%s/ws\n", addr)
 
@@ -432,20 +474,20 @@ var agentCmd = &cobra.Command{
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 		<-sigChan
-		fmt.Println("\nShutting down gateway...")
+		fmt.Println("\n正在关闭网关...")
 
 		if err := srv.Stop(ctx); err != nil {
-			return fmt.Errorf("failed to stop gateway: %w", err)
+			return fmt.Errorf("关闭网关失败: %w", err)
 		}
 
-		fmt.Println("Gateway stopped")
+		fmt.Println("网关已停止")	
 		return nil
 	},
 }
 var daemonCmd = &cobra.Command{
 	Use:   "daemon",
-	Short: "Start long-running autonomous runtime",
-	Long:  "Start GoClaw as a daemon with agent and gateway",
+	Short: "启动长期运行的自主运行时",
+	Long:  "以守护进程方式启动 GoClaw，包含代理和网关",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -453,7 +495,7 @@ var daemonCmd = &cobra.Command{
 
 		cfg, err := loadConfig()
 		if err != nil {
-			return fmt.Errorf("failed to load config: %w", err)
+			return fmt.Errorf("加载配置失败: %w", err)
 		}
 
 		// Use config provider if not specified via flag
@@ -464,7 +506,7 @@ var daemonCmd = &cobra.Command{
 
 		providerInstance, err := createProvider(cfg, providerToUse)
 		if err != nil {
-			return fmt.Errorf("failed to create provider: %w", err)
+			return fmt.Errorf("创建提供程序失败: %w", err)
 		}
 
 		// Use config model
@@ -522,7 +564,7 @@ var daemonCmd = &cobra.Command{
 
 		// Get skills directory from config
 		skillsDir := cfg.GetSkillsDir()
-		log.Printf("Skills directory: %s", skillsDir)
+		log.Printf("技能目录: %s", skillsDir)
 
 		// Add skill-based tools
 		agentTools = append(agentTools,
@@ -530,11 +572,11 @@ var daemonCmd = &cobra.Command{
 			//tools.NewStockAnalyzerTool(skillsDir),
 		)
 
-		log.Printf("Creating skill loader with directory: %s", skillsDir)
+		log.Printf("创建技能加载器，目录: %s", skillsDir)
 		skillLoader := skills.NewSkillLoader(skillsDir)
-		log.Printf("Skill loader created: %v", skillLoader)
+		log.Printf("技能加载器创建成功: %v", skillLoader)
 
-		log.Printf("Building agent...")
+		log.Printf("构建代理...")
 		agt, err := agent.NewAgentBuilder().
 			WithProvider(providerInstance).
 			WithModelName(modelToUse).
@@ -543,22 +585,25 @@ var daemonCmd = &cobra.Command{
 			WithSkillLoader(skillLoader).
 			Build()
 		if err != nil {
-			log.Printf("Failed to build agent: %v", err)
-			return fmt.Errorf("failed to build agent: %w", err)
+			log.Printf("构建代理失败: %v", err)
+			return fmt.Errorf("构建代理失败: %w", err)
 		}
-		log.Printf("Agent built successfully")
+		log.Printf("代理构建成功")
 
 		addr := ":" + daemonPort
-		log.Printf("Creating gateway server on %s", addr)
-	srv := gateway.NewServer(addr, agt, cfg.Gateway.StaticDir)
+		log.Printf("创建网关服务器，地址: %s", addr)
+		
+		// Use embedded web files
+		srv := gateway.NewServerWithFS(addr, agt, http.FS(embeddedWebFS))
 
 		if err := srv.Start(ctx); err != nil {
-			return fmt.Errorf("failed to start gateway: %w", err)
+			return fmt.Errorf("启动网关失败: %w", err)
 		}
 
-		fmt.Printf("GoClaw Daemon started on %s\n", addr)
-	fmt.Printf("Provider: %s, Model: %s\n", providerToUse, modelToUse)
-	fmt.Printf("Available at: http://localhost%s/\n", addr)
+		fmt.Printf("网关服务器已启动于 %s\n", addr)
+	fmt.Printf("提供程序: %s, 模型: %s\n", providerToUse, modelToUse)
+	fmt.Printf("HTTP API: http://localhost%s\n", addr)
+	fmt.Printf("WebSocket: ws://localhost%s/ws\n", addr)	
 
 		// Start channels from config
 		var channelWG sync.WaitGroup
@@ -580,23 +625,24 @@ var daemonCmd = &cobra.Command{
 			channelWG.Add(1)
 			go func(name string, c channels.Channel) {
 				defer channelWG.Done()
-				log.Printf("Starting channel: %s", name)
+				log.Printf("启动通道: %s", name)
 				if err := c.Listen(ctx, msgChan); err != nil {
-					log.Printf("Channel %s error: %v", name, err)
+					log.Printf("通道 %s 错误: %v", name, err)
 				}
 			}(channelName, ch)
 			startedChannels++
-			fmt.Printf("  Channel: %s\n", channelName)
+			fmt.Printf("  通道: %s\n", channelName)
 		}
 		
 		if startedChannels == 0 {
-			fmt.Println("  No channels configured")
+			fmt.Println("  未配置任何通道")
 		}
 		
 		// Start message processor with channel map for replies
 		channelWG.Add(1)
 		go func() {
 			defer channelWG.Done()
+			log.Printf("启动消息处理器")
 			processChannelMessages(ctx, agt, msgChan, channelMap)
 		}()
 
@@ -605,19 +651,20 @@ var daemonCmd = &cobra.Command{
 
 	go func() {
 		<-sigChan
-		fmt.Println("\nShutting down daemon...")
+		fmt.Println("\n关闭守护进程...")
+		log.Printf("收到信号，开始关闭守护进程")
 		
 		// Cancel context to stop all goroutines
 		cancel()
 		
 		if err := srv.Stop(context.Background()); err != nil {
-			log.Printf("Failed to stop gateway: %v", err)
+			log.Printf("关闭网关服务器失败: %v", err)
 		}
 		
 		close(msgChan)
 		channelWG.Wait()
 
-		fmt.Println("Daemon stopped")
+		fmt.Println("守护进程已停止")
 		os.Exit(0)
 	}()
 
@@ -634,7 +681,7 @@ func createChannelFromConfig(name string, cfg config.ChannelConfig) channels.Cha
 		clientID := cfg["client_id"]
 		clientSecret := cfg["client_secret"]
 		if clientID == "" || clientSecret == "" {
-			log.Printf("DingTalk missing client_id or client_secret")
+			log.Printf("DingTalk 通道缺少 client_id 或 client_secret")
 			return nil
 		}
 		allowedUsers := parseAllowedUsers(cfg["allowed_users"])
@@ -642,7 +689,7 @@ func createChannelFromConfig(name string, cfg config.ChannelConfig) channels.Cha
 	case "telegram":
 		token := cfg["token"]
 		if token == "" {
-			log.Printf("Telegram missing token")
+			log.Printf("Telegram 通道缺少 token")
 			return nil
 		}
 		allowedUsers := parseAllowedUsers(cfg["allowed_users"])
@@ -651,7 +698,7 @@ func createChannelFromConfig(name string, cfg config.ChannelConfig) channels.Cha
 		token := cfg["token"]
 		guildID := cfg["guild_id"]
 		if token == "" {
-			log.Printf("Discord missing token")
+			log.Printf("Discord 通道缺少 token")
 			return nil
 		}
 		allowedUsers := parseAllowedUsers(cfg["allowed_users"])
@@ -661,13 +708,13 @@ func createChannelFromConfig(name string, cfg config.ChannelConfig) channels.Cha
 		signingSecret := cfg["signing_secret"]
 		appToken := cfg["app_token"]
 		if botToken == "" {
-			log.Printf("Slack missing bot_token")
+			log.Printf("Slack 通道缺少 bot_token")
 			return nil
 		}
 		allowedUsers := parseAllowedUsers(cfg["allowed_users"])
 		return channels.NewSlackChannel(botToken, signingSecret, appToken, allowedUsers, false)
 	default:
-		log.Printf("Unknown channel type: %s", name)
+		log.Printf("未知通道类型: %s", name)
 		return nil
 	}
 }
@@ -699,34 +746,34 @@ func processChannelMessages(ctx context.Context, agt *agent.Agent, msgChan <-cha
 				return
 			}
 
-			log.Printf("=== Processing channel message ===")
-			log.Printf("  Channel: %s, Sender: %s, ReplyTarget: %s", msg.Channel, msg.Sender, msg.ReplyTarget)
-			log.Printf("  Content: %s", msg.Content)
+			log.Printf("=== 处理通道消息 ===")
+			log.Printf("  通道: %s, 发送者: %s, 回复目标: %s", msg.Channel, msg.Sender, msg.ReplyTarget)
+			log.Printf("  内容: %s", msg.Content)
 
 			resp, err := agt.ProcessMessage(ctx, msg.Content)
 			if err != nil {
-				log.Printf("Agent error: %v", err)
+				log.Printf("代理错误: %v", err)
 				continue
 			}
 
 			responseText := resp.TextOrEmpty()
-			log.Printf("  Response length: %d chars", len(responseText))
-			log.Printf("  Response preview: %s", truncateString(responseText, 100))
+			log.Printf("  响应长度: %d 个字符", len(responseText))
+			log.Printf("  响应预览: %s", truncateString(responseText, 100))
 
 			ch, ok := channelMap[msg.Channel]
 			if !ok {
-				log.Printf("No channel found for %s", msg.Channel)
+				log.Printf("未找到通道 %s", msg.Channel)
 				continue
 			}
 
 			replyMsg := types.NewSendMessage(responseText, msg.ReplyTarget)
-			log.Printf("  Sending reply to %s...", msg.ReplyTarget)
+			log.Printf("  发送回复到 %s...", msg.ReplyTarget)
 			if err := ch.Send(ctx, replyMsg); err != nil {
-				log.Printf("Failed to send reply: %v", err)
+				log.Printf("发送回复失败: %v", err)
 			} else {
-				log.Printf("  Reply sent successfully!")
+				log.Printf("  回复发送成功!")
 			}
-			log.Printf("=== End processing ===")
+			log.Printf("=== 处理通道消息结束 ===")
 		}
 	}
 }
@@ -740,14 +787,14 @@ func truncateString(s string, maxLen int) string {
 
 var channelCmd = &cobra.Command{
 	Use:   "channel",
-	Short: "Manage communication channels",
+	Short: "管理消息通道",
 }
 
 var channelListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List available channels",
+	Short: "列出可用的消息通道",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Available channels:")
+		fmt.Println("可用通道:")
 		fmt.Println("  - telegram:  Telegram Bot API")
 		fmt.Println("  - discord:   Discord Bot API")
 		fmt.Println("  - slack:     Slack Bot API")
@@ -760,11 +807,11 @@ var channelListCmd = &cobra.Command{
 
 var channelTestCmd = &cobra.Command{
 	Use:   "test <channel>",
-	Short: "Test a channel connection",
+	Short: "测试通道连接",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		channelType := args[0]
-		fmt.Printf("Testing channel: %s\n", channelType)
+		fmt.Printf("测试通道: %s\n", channelType)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -787,28 +834,28 @@ var channelTestCmd = &cobra.Command{
 		case "email":
 			ch = channels.NewEmailChannel("smtp.gmail.com", 587, "user", "pass", "from@example.com", []string{})
 		default:
-			return fmt.Errorf("unknown channel type: %s", channelType)
+			return fmt.Errorf("未知通道类型: %s", channelType)
 		}
 
 		if err := ch.HealthCheck(ctx); err != nil {
-			return fmt.Errorf("channel health check failed: %w", err)
+			return fmt.Errorf("通道 '%s' 健康检查失败: %w", channelType, err)
 		}
 
-		fmt.Printf("✓ Channel '%s' is healthy\n", channelType)
+		fmt.Printf("✓ 通道 '%s' 健康\n", channelType)
 		return nil
 	},
 }
 
 var providerCmd = &cobra.Command{
 	Use:   "provider",
-	Short: "Manage AI providers",
+	Short: "管理 AI 提供商",
 }
 
 var providerListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List available providers",
+	Short: "列出可用的 AI 提供商",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Available providers:")
+		fmt.Println("可用 AI 提供商:")
 		fmt.Println("  - openai:     OpenAI GPT models")
 		fmt.Println("  - anthropic:  Anthropic Claude models")
 		fmt.Println("  - gemini:     Google Gemini models")
@@ -821,11 +868,11 @@ var providerListCmd = &cobra.Command{
 
 var providerTestCmd = &cobra.Command{
 	Use:   "test <provider>",
-	Short: "Test a provider connection",
+	Short: "测试提供商连接",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		providerType := args[0]
-		fmt.Printf("Testing provider: %s\n", providerType)
+		fmt.Printf("测试 AI 提供商: %s\n", providerType)
 
 		var p providers.Provider
 
@@ -850,8 +897,8 @@ var providerTestCmd = &cobra.Command{
 
 caps := p.Capabilities()
 
-		fmt.Printf("✓ Provider '%s' created\n", providerType)
-		fmt.Printf("  Capabilities: NativeToolCalling=%v, Vision=%v\n",
+		fmt.Printf("✓ AI 提供商 '%s' 创建成功\n", providerType)
+		fmt.Printf("  功能: NativeToolCalling=%v, Vision=%v\n",
 			caps.NativeToolCalling,
 			caps.Vision,
 		)
@@ -862,35 +909,46 @@ caps := p.Capabilities()
 
 var memoryCmd = &cobra.Command{
 	Use:   "memory",
-	Short: "Manage memory storage",
+	Short: "管理存储",
 }
 
 var memoryListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List memory entries",
+	Short: "列出存储条目",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Memory entries:")
-		fmt.Println("(No memory entries yet)")
+		fmt.Println("存储条目:")
+		fmt.Println("(暂无存储条目)")
 		return nil
 	},
 }
 
 var memoryClearCmd = &cobra.Command{
 	Use:   "clear",
-	Short: "Clear all memory entries",
+	Short: "清除所有存储条目",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Memory cleared")
+		fmt.Println("所有存储条目已清除")	
 		return nil
+	},
+}
+
+var onboardCmd = &cobra.Command{
+	Use:   "onboard",
+	Short: "交互式配置向导",
+	Long:  "运行交互式配置向导来配置 GoClaw",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+		wizard := onboard.NewWizard()
+		return wizard.Run(ctx)
 	},
 }
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "Show version information",
+	Short: "显示版本信息",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("GoClaw v0.1.0")
-		fmt.Println("Built with Go")
-		fmt.Println("Compatible with ZeroClaw")
+		fmt.Println("构建于 Go")
+		fmt.Println("与 ZeroClaw 兼容")
 	},
 }
 
@@ -900,7 +958,68 @@ func loadConfig() (*config.Config, error) {
 		return config.Default(), nil
 	}
 	configDir := filepath.Join(homeDir, ".goclaw")
+	
+	// Auto-initialize if config directory doesn't exist
+	if _, err := os.Stat(configDir); os.IsNotExist(err) {
+		if err := initializeConfig(configDir); err != nil {
+			log.Printf("警告: 初始化配置失败: %v", err)
+			return config.Default(), nil
+		}
+	}
+	
 	return config.Load(configDir)
+}
+
+func initializeConfig(configDir string) error {
+	log.Printf("初始化 GoClaw 配置在 %s", configDir)	
+	
+	// Create config directory
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("创建配置目录失败: %w", err)
+	}
+	
+	// Create workspace directory
+	workspaceDir := filepath.Join(configDir, "workspace")
+	if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+		return fmt.Errorf("创建工作空间目录失败: %w", err)
+	}
+	
+	// Create skills directory
+	skillsDir := filepath.Join(configDir, "workspace", "skills")
+	if err := os.MkdirAll(skillsDir, 0755); err != nil {
+		return fmt.Errorf("创建技能目录失败: %w", err)
+	}
+	
+	// Create default config file
+	configPath := filepath.Join(configDir, "config.toml")
+	defaultConfig := `# GoClaw Configuration
+# Generated automatically on first run
+
+[provider]
+name = "openai"
+model = "gpt-4"
+# api_key = "your-api-key-here"
+
+[memory]
+backend = "none"
+
+[gateway]
+host = "0.0.0.0"
+port = 4096
+`
+	
+	if err := os.WriteFile(configPath, []byte(defaultConfig), 0644); err != nil {
+		return fmt.Errorf("写入配置文件失败: %w", err)
+	}
+	
+	log.Printf("配置初始化成功")
+	log.Printf("  配置文件: %s", configPath)
+	log.Printf("  工作空间: %s", workspaceDir)
+	log.Printf("  技能目录: %s", skillsDir)
+	log.Printf("")
+	log.Printf("运行 'goclaw onboard' 来配置您的 AI 提供商和设置")
+	
+	return nil
 }
 
 func createProvider(cfg *config.Config, providerType string) (providers.Provider, error) {
