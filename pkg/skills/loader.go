@@ -107,6 +107,7 @@ func (l *SkillLoader) LoadSkills() error {
 							Description: cmd.Description,
 							Kind:        "shell",
 							Command:      fmt.Sprintf("./%s.sh", cmd.Name),
+							Parameters:  cmd.Parameters,
 						}
 						skill.Tools = append(skill.Tools, tool)
 					}
