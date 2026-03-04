@@ -1,6 +1,7 @@
 <template>
   <div class="flex flex-col h-[calc(100vh-3.5rem)]">
-    <div v-if="error" class="px-4 py-2 bg-red-900/30 border-b border-red-700 flex items-center gap-2 text-sm text-red-300">
+    <div v-if="error"
+      class="px-4 py-2 bg-red-900/30 border-b border-red-700 flex items-center gap-2 text-sm text-red-300">
       <AlertCircle class="h-4 w-4 flex-shrink-0" />
       {{ error }}
     </div>
@@ -12,39 +13,27 @@
         <p class="text-sm mt-1">发送消息开始对话</p>
       </div>
 
-      <div
-        v-for="msg in messages"
-        :key="msg.id"
-        :class="['flex items-start gap-3', msg.role === 'user' ? 'flex-row-reverse' : '']"
-      >
-        <div
-          :class="[
-            'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center',
-            msg.role === 'user' ? 'bg-blue-600' : 'bg-gray-700'
-          ]"
-        >
+      <div v-for="msg in messages" :key="msg.id"
+        :class="['flex items-start gap-3', msg.role === 'user' ? 'flex-row-reverse' : '']">
+        <div :class="[
+          'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center',
+          msg.role === 'user' ? 'bg-blue-600' : 'bg-gray-700'
+        ]">
           <User v-if="msg.role === 'user'" class="h-4 w-4 text-white" />
           <Bot v-else class="h-4 w-4 text-white" />
         </div>
-        <div
-          :class="[
-            'max-w-[75%] rounded-xl px-4 py-3',
-            msg.role === 'user'
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-800 text-gray-100 border border-gray-700'
-          ]"
-        >
+        <div :class="[
+          'max-w-[75%] rounded-xl px-4 py-3',
+          msg.role === 'user'
+            ? 'bg-blue-600 text-white'
+            : 'bg-gray-800 text-gray-100 border border-gray-700'
+        ]">
           <p class="text-sm whitespace-pre-wrap break-words">{{ msg.content }}</p>
           <audio v-if="msg.audioUrl" controls class="w-full max-w-[300px] mt-2" :src="msg.audioUrl">
             您的浏览器不支持音频播放
           </audio>
-          <a
-            v-if="msg.audioUrl"
-            :href="msg.audioUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-xs text-blue-400 hover:text-blue-300 mt-1 inline-block"
-          >
+          <a v-if="msg.audioUrl" :href="msg.audioUrl" target="_blank" rel="noopener noreferrer"
+            class="text-xs text-blue-400 hover:text-blue-300 mt-1 inline-block">
             下载音频
           </a>
           <p :class="['text-xs mt-1', msg.role === 'user' ? 'text-blue-200' : 'text-gray-500']">
@@ -73,32 +62,25 @@
     <div class="border-t border-gray-800 bg-gray-900 p-4">
       <div class="flex items-center gap-3">
         <div class="flex-1 relative">
-          <textarea
-            ref="inputRef"
-            v-model="input"
-            @keydown="handleKeyDown"
-            :placeholder="connected ? '输入消息...' : '连接中...'"
-            :disabled="!connected"
-            rows="4"
-            class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 resize-none"
-          />
+          <textarea ref="inputRef" v-model="input" @keydown="handleKeyDown"
+            :placeholder="connected ? '输入消息...' : '连接中...'" :disabled="!connected" rows="4"
+            class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 resize-none" />
         </div>
-        <button
-          @click="handleSend"
-          :disabled="!connected || !input.trim()"
-          class="flex-shrink-0 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl p-3 transition-colors"
-        >
-          <Send class="h-5 w-5" />
-        </button>
+        <div>
+          <div class="flex items-center justify-center mt-2 gap-2" style="position: relative;top: -20px;">
+            <span :class="['inline-block h-2 w-2 rounded-full', connected ? 'bg-green-500' : 'bg-red-500']" />
+            <span class="text-xs text-gray-500">
+              {{ connected ? '已连接' : '已断开' }}
+            </span>
+          </div>
+          <button @click="handleSend" :disabled="!connected || !input.trim()"
+            class="flex-shrink-0 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl p-3 transition-colors">
+            <Send class="h-5 w-5" />
+          </button>
+        </div>
+
       </div>
-      <div class="flex items-center justify-center mt-2 gap-2">
-        <span
-          :class="['inline-block h-2 w-2 rounded-full', connected ? 'bg-green-500' : 'bg-red-500']"
-        />
-        <span class="text-xs text-gray-500">
-          {{ connected ? '已连接' : '已断开' }}
-        </span>
-      </div>
+
     </div>
   </div>
 </template>

@@ -32,8 +32,9 @@ type ProviderConfig struct {
 }
 
 type MemoryConfig struct {
-	Backend string
-	Config  map[string]string
+	Backend   string
+	Config    map[string]string
+	AutoSave  bool
 }
 
 type GatewayConfig struct {
@@ -103,7 +104,6 @@ func Load(configDir string) (*Config, error) {
 	cfg := Default()
 	content := string(data)
 
-	// Parse top-level keys
 	cfg.Provider.Name = parseTomlString(content, "default_provider", cfg.Provider.Name)
 	cfg.Provider.Model = parseTomlString(content, "default_model", cfg.Provider.Model)
 	cfg.Provider.APIKey = parseTomlString(content, "api_key", "")
@@ -112,29 +112,68 @@ func Load(configDir string) (*Config, error) {
 	cfg.SkillsDir = parseTomlString(content, "skills_dir", cfg.SkillsDir)
 	cfg.Gateway.StaticDir = parseTomlString(content, "static_dir", cfg.Gateway.StaticDir)
 
-	// If provider name contains "custom:", extract the base URL
+	cfg.Memory.Backend = parseTomlNestedString(content, "memory.backend", cfg.Memory.Backend)
+	cfg.Memory.Config = parseMemoryConfig(content)
+	cfg.Memory.AutoSave = parseTomlNestedString(content, "memory.auto_save", "false") == "true"
+
 	if strings.HasPrefix(cfg.Provider.Name, "custom:") {
 		cfg.Provider.BaseURL = strings.TrimPrefix(cfg.Provider.Name, "custom:")
 	}
 
-	// Parse channels_config sections
 	cfg.Channels = parseChannelsConfig(content)
 
 	return cfg, nil
+}
+
+// parseMemoryConfig parses [memory] section
+func parseMemoryConfig(content string) map[string]string {
+	config := make(map[string]string)
+
+	sectionRe := regexp.MustCompile(`(?m)^\[memory\]`)
+	match := sectionRe.FindStringIndex(content)
+
+	if match == nil {
+		return config
+	}
+
+	start := match[1]
+	
+	nextSectionRe := regexp.MustCompile(`(?m)^\[`)
+	nextMatch := nextSectionRe.FindStringIndex(content[start:])
+	if nextMatch != nil {
+		end := start + nextMatch[0]
+		sectionContent := content[start:end]
+		kvRe := regexp.MustCompile(`(?m)^(\w+)\s*=\s*(.+)$`)
+		kvMatches := kvRe.FindAllStringSubmatch(sectionContent, -1)
+		for _, kv := range kvMatches {
+			key := kv[1]
+			value := strings.Trim(strings.TrimSpace(kv[2]), "\"'")
+			config[key] = value
+		}
+	} else {
+		sectionContent := content[start:]
+		kvRe := regexp.MustCompile(`(?m)^(\w+)\s*=\s*(.+)$`)
+		kvMatches := kvRe.FindAllStringSubmatch(sectionContent, -1)
+		for _, kv := range kvMatches {
+			key := kv[1]
+			value := strings.Trim(strings.TrimSpace(kv[2]), "\"'")
+			config[key] = value
+		}
+	}
+
+	return config
 }
 
 // parseChannelsConfig parses [channels_config.XXX] sections
 func parseChannelsConfig(content string) map[string]ChannelConfig {
 	channels := make(map[string]ChannelConfig)
 
-	// Find all [channels_config.XXX] sections
 	sectionRe := regexp.MustCompile(`(?m)^\[channels_config\.(\w+)\]`)
 	matches := sectionRe.FindAllStringSubmatchIndex(content, -1)
 
 	for i, match := range matches {
 		channelName := content[match[2]:match[3]]
 
-		// Get the section content (from section start to next section or EOF)
 		start := match[1]
 		end := len(content)
 		if i < len(matches)-1 {
@@ -143,7 +182,6 @@ func parseChannelsConfig(content string) map[string]ChannelConfig {
 
 		sectionContent := content[start:end]
 
-		// Parse key-value pairs in the section
 		cfg := make(ChannelConfig)
 		kvRe := regexp.MustCompile(`(?m)^(\w+)\s*=\s*(.+)$`)
 		kvMatches := kvRe.FindAllStringSubmatch(sectionContent, -1)
@@ -201,6 +239,46 @@ func parseTomlString(content, key, defaultValue string) string {
 	if len(matches) > 1 {
 		return strings.TrimSpace(matches[1])
 	}
+	return defaultValue
+}
+
+// parseTomlNestedString parses a nested key like "memory.backend" from TOML content
+func parseTomlNestedString(content, key, defaultValue string) string {
+	parts := strings.Split(key, ".")
+	if len(parts) != 2 {
+		return parseTomlString(content, key, defaultValue)
+	}
+
+	section := parts[0]
+	field := parts[1]
+
+	// Find the section first
+	sectionRe := regexp.MustCompile(`(?m)^\[` + regexp.QuoteMeta(section) + `\]`)
+	sectionMatch := sectionRe.FindStringIndex(content)
+	if sectionMatch == nil {
+		return defaultValue
+	}
+
+	start := sectionMatch[1]
+
+	// Find the next section
+	nextSectionRe := regexp.MustCompile(`(?m)^\[`)
+	nextMatch := nextSectionRe.FindStringIndex(content[start:])
+	var sectionContent string
+	if nextMatch != nil {
+		end := start + nextMatch[0]
+		sectionContent = content[start:end]
+	} else {
+		sectionContent = content[start:]
+	}
+
+	// Now find the field in the section
+	fieldRe := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(field) + `\s*=\s*["']?([^"'\n\r]+)["']?\s*$`)
+	fieldMatches := fieldRe.FindStringSubmatch(sectionContent)
+	if len(fieldMatches) > 1 {
+		return strings.TrimSpace(fieldMatches[1])
+	}
+
 	return defaultValue
 }
 

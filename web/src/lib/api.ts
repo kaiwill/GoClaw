@@ -167,7 +167,10 @@ export function getMemory(
   if (category) params.set('category', category);
   const qs = params.toString();
   return apiFetch<MemoryEntry[] | { entries: MemoryEntry[] }>(`/api/memory${qs ? `?${qs}` : ''}`).then(
-    (data) => unwrapField(data, 'entries'),
+    (data) => {
+      data.entries = data.entries || [];
+      return unwrapField(data, 'entries') || [];
+    },
   );
 }
 

@@ -32,6 +32,8 @@ type Server struct {
 	authMiddleware func(http.Handler) http.Handler
 	wsClients      map[string]*wsClient
 	wsClientsMu    sync.RWMutex
+	config         map[string]interface{}
+	memoryBackend  interface{}
 }
 
 type wsClient struct {
@@ -64,6 +66,7 @@ func NewServer(addr string, agent *agent.Agent, staticDir string) *Server {
 		staticDir:  staticDir,
 		sseClients: make(map[string]chan *types.StreamChunk),
 		wsClients:  make(map[string]*wsClient),
+		config:     make(map[string]interface{}),
 	}
 }
 
@@ -74,7 +77,19 @@ func NewServerWithFS(addr string, agent *agent.Agent, staticFS http.FileSystem) 
 		staticFS:   staticFS,
 		sseClients: make(map[string]chan *types.StreamChunk),
 		wsClients:  make(map[string]*wsClient),
+		config:     make(map[string]interface{}),
 	}
+}
+
+func (s *Server) SetConfig(key string, value interface{}) {
+	if s.config == nil {
+		s.config = make(map[string]interface{})
+	}
+	s.config[key] = value
+}
+
+func (s *Server) SetMemoryBackend(backend interface{}) {
+	s.memoryBackend = backend
 }
 
 func (s *Server) Start(ctx context.Context) error {
@@ -441,17 +456,103 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	
 	w.Header().Set("Content-Type", "application/json")
 	
+	// Handle memory-related paths first
+	if strings.HasPrefix(path, "memory") {
+		// Remove "memory" prefix and split the rest
+		restPath := strings.TrimPrefix(path, "memory")
+		memoryKey := ""
+		if restPath != "" {
+			restPath = strings.TrimPrefix(restPath, "/")
+			if restPath != "" {
+				memoryKey = restPath
+			}
+		}
+		
+		if r.Method == http.MethodGet && memoryKey == "" {
+			// Return all memory entries
+			entries := []map[string]interface{}{}
+			
+			if s.memoryBackend != nil {
+				if mb, ok := s.memoryBackend.(interface {
+					List(ctx context.Context, category *string) ([]map[string]interface{}, error)
+				}); ok {
+					memEntries, err := mb.List(r.Context(), nil)
+					if err == nil {
+						entries = memEntries
+					}
+				}
+			}
+			
+			response := map[string]interface{}{
+				"entries": entries,
+				"count":   len(entries),
+			}
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+		
+		if r.Method == http.MethodDelete && memoryKey != "" {
+			if s.memoryBackend != nil {
+				if mb, ok := s.memoryBackend.(interface {
+					Forget(ctx context.Context, key string) error
+				}); ok {
+					err := mb.Forget(r.Context(), memoryKey)
+					if err != nil {
+						w.WriteHeader(http.StatusInternalServerError)
+						json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+						return
+					}
+					
+					response := map[string]interface{}{
+						"status":  "success",
+						"deleted": true,
+					}
+					json.NewEncoder(w).Encode(response)
+					return
+				}
+			}
+			
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "memory backend not available"})
+			return
+		}
+		
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid memory request"})
+		return
+	}
+	
 	switch path {
 	case "status":
 		// Return system status matching ZeroClaw format
+		provider := "custom:https://ai.gitee.com/v1"
+		if p, ok := s.config["provider"].(string); ok {
+			provider = p
+		}
+		
+		model := "GLM-4.7-Flash"
+		if m, ok := s.config["model"].(string); ok {
+			model = m
+		}
+		
+		memoryBackend := "none"
+		if mb, ok := s.config["memory_backend"].(string); ok {
+			memoryBackend = mb
+		}
+		
+		temperature := 0.7
+		if t, ok := s.config["temperature"].(float64); ok {
+			temperature = t
+		}
+		
 		response := map[string]interface{}{
-			"provider":       "custom:https://ai.gitee.com/v1",
-			"model":          "GLM-4.7-Flash",
-			"temperature":    0.7,
+			"provider":       provider,
+			"model":          model,
+			"temperature":    temperature,
 			"uptime_seconds": 0,
 			"gateway_port":   4096,
 			"locale":         "zh-CN",
-			"memory_backend": "none",
+			"memory_backend": memoryBackend,
 			"paired":         false,
 			"channels":       map[string]bool{},
 			"health": map[string]interface{}{
@@ -584,18 +685,6 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 			},
 		}
 		json.NewEncoder(w).Encode(response)
-		return
-		
-	case "memory":
-		if r.Method == http.MethodGet {
-			// Return memory entries
-			response := map[string]interface{}{
-				"entries": []map[string]interface{}{},
-			}
-			json.NewEncoder(w).Encode(response)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 		return
 		
 	case "cli-tools":

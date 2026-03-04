@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/zeroclaw-labs/goclaw/pkg/providers"
 	"github.com/zeroclaw-labs/goclaw/pkg/skills"
@@ -355,6 +356,24 @@ func (a *Agent) ProcessMessage(ctx context.Context, message string) (*types.Chat
 			Content: response.TextOrEmpty(),
 		},
 	})
+
+	// Auto-save conversation to memory if enabled
+	if a.autoSave && a.memory != nil {
+		conversation := fmt.Sprintf("用户: %s\n助手: %s", message, response.TextOrEmpty())
+		timestamp := time.Now().Format("2006-01-02 15:04:05")
+		key := fmt.Sprintf("conversation_%s", time.Now().Format("20060102_150405"))
+		category := "conversation"
+		
+		err := a.memory.Store(ctx, key, conversation, &category, map[string]string{
+			"timestamp": timestamp,
+			"type":      "auto_save",
+		})
+		if err != nil {
+			log.Printf("Warning: Failed to auto-save conversation to memory: %v", err)
+		} else {
+			log.Printf("Auto-saved conversation to memory: %s", key)
+		}
+	}
 
 	return response, nil
 }

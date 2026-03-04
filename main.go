@@ -99,6 +99,28 @@ func (m *memoryImpl) Clear(ctx context.Context) error {
 	return m.backend.Clear(ctx)
 }
 
+func (m *memoryImpl) List(ctx context.Context, category *string) ([]map[string]interface{}, error) {
+	entries, err := m.backend.List(ctx, category)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []map[string]interface{}
+	for _, entry := range entries {
+		result = append(result, map[string]interface{}{
+			"id":         entry.ID,
+			"key":        entry.Key,
+			"content":    entry.Content,
+			"category":   entry.Category,
+			"metadata":   entry.Metadata,
+			"created_at": entry.CreatedAt,
+			"updated_at": entry.UpdatedAt,
+		})
+	}
+
+	return result, nil
+}
+
 func main() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -226,10 +248,8 @@ var agentCmd = &cobra.Command{
 			return fmt.Errorf("创建提供商失败: %w", err)
 		}
 
-		// Create memory backend
-		memoryBackend := memory.NewNoneMemoryBackend()
+		memoryBackend := createMemoryBackend(cfg)
 
-		// Create memory implementation
 		memImpl := &memoryImpl{
 			backend: memoryBackend,
 		}
@@ -301,6 +321,7 @@ var agentCmd = &cobra.Command{
 	WithTools(agentTools).
 			WithSkillLoader(skills.NewSkillLoader(skillsDir)).
 	WithMemory(memImpl).
+	WithAutoSave(cfg.Memory.AutoSave).
 	Build()
 		if err != nil {
 			return fmt.Errorf("创建代理失败: %w", err)
@@ -380,74 +401,63 @@ var agentCmd = &cobra.Command{
 			return fmt.Errorf("创建提供程序失败: %w", err)
 		}
 
-		// Use config model
 		modelToUse := cfg.Provider.Model
 		if modelToUse == "" {
 			modelToUse = "gpt-4"
 		}
 
-		// Create tools for the agent
-	agentTools := []tools.Tool{
-		// Core tools
-		tools.NewShellTool(),
-		tools.NewFileReadTool(),
-		tools.NewFileWriteTool(),
-		tools.NewFileEditTool(),
-		tools.NewGlobSearchTool("."),
-		tools.NewContentSearchTool("."),
-		// Network tools
-		tools.NewHTTPTool(),
-		tools.NewFetchTool(),
-		tools.NewWebFetchTool(),
-		tools.NewWebSearchTool(),
-		// Image tools
-		tools.NewImageInfoTool("."),
-		tools.NewScreenshotTool("."),
-		// PDF tool
-		tools.NewPDFReadTool("."),
-		// Schedule tools
-		tools.NewScheduleTool("."),
-		tools.NewTaskPlanTool(),
-		// Cron tools
-		tools.NewCronAddTool("."),
-		tools.NewCronListTool("."),
-		tools.NewCronRemoveTool("."),
-		tools.NewCronRunTool("."),
-		// Browser tools
-		tools.NewBrowserOpenTool(nil),
-		tools.NewBrowserTool(nil),
-		// Config tools
-		tools.NewModelRoutingConfigTool(),
-		tools.NewProxyConfigTool(),
-		// Delegate tool
-		tools.NewDelegateTool("."),
-		// Git & Patch tools
-		tools.NewApplyPatchTool(),
-		tools.NewGitOperationsTool("."),
-		// Pushover notification
-		tools.NewPushoverTool(""),
-	}
+		memoryBackend := createMemoryBackend(cfg)
 
-		// Add IPC tools if enabled
+		agentTools := []tools.Tool{
+			tools.NewShellTool(),
+			tools.NewFileReadTool(),
+			tools.NewFileWriteTool(),
+			tools.NewFileEditTool(),
+			tools.NewGlobSearchTool("."),
+			tools.NewContentSearchTool("."),
+			tools.NewHTTPTool(),
+			tools.NewFetchTool(),
+			tools.NewWebFetchTool(),
+			tools.NewWebSearchTool(),
+			tools.NewImageInfoTool("."),
+			tools.NewScreenshotTool("."),
+			tools.NewPDFReadTool("."),
+			tools.NewScheduleTool("."),
+			tools.NewTaskPlanTool(),
+			tools.NewCronAddTool("."),
+			tools.NewCronListTool("."),
+			tools.NewCronRemoveTool("."),
+			tools.NewCronRunTool("."),
+			tools.NewBrowserOpenTool(nil),
+			tools.NewBrowserTool(nil),
+			tools.NewModelRoutingConfigTool(),
+			tools.NewProxyConfigTool(),
+			tools.NewDelegateTool("."),
+			tools.NewApplyPatchTool(),
+			tools.NewGitOperationsTool("."),
+			tools.NewPushoverTool(""),
+			tools.NewMemoryStoreTool(memoryBackend),
+			tools.NewMemoryRecallTool(memoryBackend),
+			tools.NewMemoryForgetTool(memoryBackend),
+		}
+
 		if ipcDb := tools.GetIpcDb(); ipcDb != nil {
 			agentTools = append(agentTools, tools.CreateIpcTools(ipcDb, nil)...)
 		}
 
-		// Get skills directory from config
 		skillsDir := cfg.GetSkillsDir()
 
-		// Add skill-based tools
-		agentTools = append(agentTools,
-			//tools.NewEmailTool(skillsDir),
-			//tools.NewStockAnalyzerTool(skillsDir),
-		)
+		memImpl := &memoryImpl{
+			backend: memoryBackend,
+		}
 
 		agt, err := agent.NewAgentBuilder().
 			WithProvider(providerInstance).
 			WithModelName(modelToUse).
-			WithMemory(agent.NewNoneMemoryBackend()).
+			WithMemory(memImpl).
 			WithTools(agentTools).
 			WithSkillLoader(skills.NewSkillLoader(skillsDir)).
+			WithAutoSave(cfg.Memory.AutoSave).
 			Build()
 		if err != nil {
 			return fmt.Errorf("创建代理失败: %w", err)
@@ -460,6 +470,13 @@ var agentCmd = &cobra.Command{
 		
 		// Use embedded web files
 		srv := gateway.NewServerWithFS(addr, agt, http.FS(embeddedWebFS))
+		
+		// Set gateway config from actual values
+		srv.SetConfig("provider", providerToUse)
+		srv.SetConfig("model", modelToUse)
+		srv.SetConfig("temperature", cfg.Agent.Temperature)
+		srv.SetConfig("memory_backend", cfg.Memory.Backend)
+		srv.SetMemoryBackend(memImpl)
 
 		if err := srv.Start(ctx); err != nil {
 			return fmt.Errorf("启动网关失败: %w", err)
@@ -509,80 +526,68 @@ var daemonCmd = &cobra.Command{
 			return fmt.Errorf("创建提供程序失败: %w", err)
 		}
 
-		// Use config model
 		modelToUse := cfg.Provider.Model
 		if modelToUse == "" {
 			modelToUse = "gpt-4"
 		}
 
-		// Create tools for the agent
-	agentTools := []tools.Tool{
-		// Core tools
-		tools.NewShellTool(),
-		tools.NewFileReadTool(),
-		tools.NewFileWriteTool(),
-		tools.NewFileEditTool(),
-		tools.NewGlobSearchTool("."),
-		tools.NewContentSearchTool("."),
-		// Network tools
-		tools.NewHTTPTool(),
-		tools.NewFetchTool(),
-		tools.NewWebFetchTool(),
-		tools.NewWebSearchTool(),
-		// Image tools
-		tools.NewImageInfoTool("."),
-		tools.NewScreenshotTool("."),
-		// PDF tool
-		tools.NewPDFReadTool("."),
-		// Schedule tools
-		tools.NewScheduleTool("."),
-		tools.NewTaskPlanTool(),
-		// Cron tools
-		tools.NewCronAddTool("."),
-		tools.NewCronListTool("."),
-		tools.NewCronRemoveTool("."),
-		tools.NewCronRunTool("."),
-		// Browser tools
-		tools.NewBrowserOpenTool(nil),
-		tools.NewBrowserTool(nil),
-		// Config tools
-		tools.NewModelRoutingConfigTool(),
-		tools.NewProxyConfigTool(),
-		// Delegate tool
-		tools.NewDelegateTool("."),
-		// Git & Patch tools
-		tools.NewApplyPatchTool(),
-		tools.NewGitOperationsTool("."),
-		// Pushover notification
-		tools.NewPushoverTool(""),
-	}
+		memoryBackend := createMemoryBackend(cfg)
 
-		// Add IPC tools if enabled
+		agentTools := []tools.Tool{
+			tools.NewShellTool(),
+			tools.NewFileReadTool(),
+			tools.NewFileWriteTool(),
+			tools.NewFileEditTool(),
+			tools.NewGlobSearchTool("."),
+			tools.NewContentSearchTool("."),
+			tools.NewHTTPTool(),
+			tools.NewFetchTool(),
+			tools.NewWebFetchTool(),
+			tools.NewWebSearchTool(),
+			tools.NewImageInfoTool("."),
+			tools.NewScreenshotTool("."),
+			tools.NewPDFReadTool("."),
+			tools.NewScheduleTool("."),
+			tools.NewTaskPlanTool(),
+			tools.NewCronAddTool("."),
+			tools.NewCronListTool("."),
+			tools.NewCronRemoveTool("."),
+			tools.NewCronRunTool("."),
+			tools.NewBrowserOpenTool(nil),
+			tools.NewBrowserTool(nil),
+			tools.NewModelRoutingConfigTool(),
+			tools.NewProxyConfigTool(),
+			tools.NewDelegateTool("."),
+			tools.NewApplyPatchTool(),
+			tools.NewGitOperationsTool("."),
+			tools.NewPushoverTool(""),
+			tools.NewMemoryStoreTool(memoryBackend),
+			tools.NewMemoryRecallTool(memoryBackend),
+			tools.NewMemoryForgetTool(memoryBackend),
+		}
+
 		if ipcDb := tools.GetIpcDb(); ipcDb != nil {
 			agentTools = append(agentTools, tools.CreateIpcTools(ipcDb, nil)...)
 		}
 
-		// Get skills directory from config
 		skillsDir := cfg.GetSkillsDir()
 		log.Printf("技能目录: %s", skillsDir)
 
-		// Add skill-based tools
-		agentTools = append(agentTools,
-			//tools.NewEmailTool(skillsDir),
-			//tools.NewStockAnalyzerTool(skillsDir),
-		)
-
-		log.Printf("创建技能加载器，目录: %s", skillsDir)
 		skillLoader := skills.NewSkillLoader(skillsDir)
 		log.Printf("技能加载器创建成功: %v", skillLoader)
+
+		memImpl := &memoryImpl{
+			backend: memoryBackend,
+		}
 
 		log.Printf("构建代理...")
 		agt, err := agent.NewAgentBuilder().
 			WithProvider(providerInstance).
 			WithModelName(modelToUse).
-			WithMemory(agent.NewNoneMemoryBackend()).
+			WithMemory(memImpl).
 			WithTools(agentTools).
 			WithSkillLoader(skillLoader).
+			WithAutoSave(cfg.Memory.AutoSave).
 			Build()
 		if err != nil {
 			log.Printf("构建代理失败: %v", err)
@@ -595,6 +600,12 @@ var daemonCmd = &cobra.Command{
 		
 		// Use embedded web files
 		srv := gateway.NewServerWithFS(addr, agt, http.FS(embeddedWebFS))
+		
+		// Set gateway config from actual values
+		srv.SetConfig("provider", providerToUse)
+		srv.SetConfig("model", modelToUse)
+		srv.SetConfig("temperature", cfg.Agent.Temperature)
+		srv.SetConfig("memory_backend", cfg.Memory.Backend)
 
 		if err := srv.Start(ctx); err != nil {
 			return fmt.Errorf("启动网关失败: %w", err)
@@ -959,7 +970,6 @@ func loadConfig() (*config.Config, error) {
 	}
 	configDir := filepath.Join(homeDir, ".goclaw")
 	
-	// Auto-initialize if config directory doesn't exist
 	if _, err := os.Stat(configDir); os.IsNotExist(err) {
 		if err := initializeConfig(configDir); err != nil {
 			log.Printf("警告: 初始化配置失败: %v", err)
@@ -968,6 +978,22 @@ func loadConfig() (*config.Config, error) {
 	}
 	
 	return config.Load(configDir)
+}
+
+func createMemoryBackend(cfg *config.Config) memory.MemoryBackend {
+	backendType := cfg.Memory.Backend
+	if backendType == "" {
+		backendType = "none"
+	}
+
+	backend, err := memory.NewBackend(backendType, cfg.Memory.Config)
+	if err != nil {
+		log.Printf("警告: 创建内存后端失败 (%s): %v, 使用none后端", backendType, err)
+		return memory.NewNoneMemoryBackend()
+	}
+
+	log.Printf("使用内存后端: %s", backendType)
+	return backend
 }
 
 func initializeConfig(configDir string) error {
@@ -1023,7 +1049,6 @@ port = 4096
 }
 
 func createProvider(cfg *config.Config, providerType string) (providers.Provider, error) {
-	// Check for custom provider URL (format: custom:https://...)
 	if strings.HasPrefix(providerType, "custom:") {
 		baseURL := strings.TrimPrefix(providerType, "custom:")
 		apiKey := cfg.Provider.APIKey
@@ -1033,7 +1058,6 @@ func createProvider(cfg *config.Config, providerType string) (providers.Provider
 		return providers.NewCustomProvider(baseURL, apiKey), nil
 	}
 
-	// Get API key from config or environment
 	apiKey := cfg.Provider.APIKey
 	if apiKey == "" {
 		apiKey = os.Getenv("OPENAI_API_KEY")
@@ -1054,6 +1078,8 @@ func createProvider(cfg *config.Config, providerType string) (providers.Provider
 		return providers.NewBedrockProvider("", "", "", "us-east-1"), nil
 	case "openrouter":
 		return providers.NewOpenRouterProvider(apiKey), nil
+	case "gitee":
+		return providers.NewCustomProvider("https://ai.gitee.com/v1", apiKey), nil
 	default:
 		return nil, fmt.Errorf("unknown provider: %s", providerType)
 	}
