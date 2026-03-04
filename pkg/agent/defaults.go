@@ -93,8 +93,10 @@ func (d *DefaultToolDispatcher) executeTool(ctx context.Context, call types.Tool
 		}, nil
 	}
 	log.Printf("Parsed arguments: %v", args)
+	log.Printf("Executing tool: %s", call.Name)
 	result, err := foundTool.Execute(ctx, args)
 	if err != nil {
+		log.Printf("Error executing tool: %v", err)
 		return ToolExecutionResult{
 			ToolCallID: call.ID,
 			Output:     fmt.Sprintf("Error executing %s: %v", call.Name, err),
@@ -102,6 +104,7 @@ func (d *DefaultToolDispatcher) executeTool(ctx context.Context, call types.Tool
 			Error:      err.Error(),
 		}, nil
 	}
+	log.Printf("Tool execution result: success=%v, output=%s", result.Success, result.Output)
 
 	// Scrub credentials from output
 	output := scrubCredentials(result.Output)
