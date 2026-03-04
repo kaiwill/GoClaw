@@ -33,7 +33,7 @@ func NewSQLiteMemoryBackend(dbPath string) (*SQLiteMemoryBackend, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to get home directory: %w", err)
 		}
-		dbPath = filepath.Join(homeDir, ".zeroclaw", "memory", "brain.db")
+		dbPath = filepath.Join(homeDir, ".goclaw", "memory", "brain.db")
 	}
 
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {

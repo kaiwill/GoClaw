@@ -44,19 +44,19 @@ go build -o bin/goclaw cmd/main.go
 
 ### 配置技能
 
-将 `skills` 目录中的技能复制到 ZeroClaw 的 workspace 目录：
+将 `skills` 目录中的技能复制到 GoClaw 的 workspace 目录：
 
 ```bash
 # 邮件发送技能
-cp -r skills/email-sender-skill ~/.zeroclaw/workspace/skills/
+cp -r skills/email-sender-skill ~/.goclaw/workspace/skills/
 
 # 股票分析技能
-cp -r skills/stock-analyzer-skill ~/.zeroclaw/workspace/skills/
+cp -r skills/stock-analyzer-skill ~/.goclaw/workspace/skills/
 ```
 
 #### 配置邮件发送技能
 
-编辑 `~/.zeroclaw/workspace/skills/email-sender-skill/index.js`：
+编辑 `~/.goclaw/workspace/skills/email-sender-skill/index.js`：
 
 ```javascript
 // 第 9-10 行，修改为你的邮箱配置

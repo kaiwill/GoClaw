@@ -899,7 +899,7 @@ func loadConfig() (*config.Config, error) {
 	if err != nil {
 		return config.Default(), nil
 	}
-	configDir := filepath.Join(homeDir, ".zeroclaw")
+	configDir := filepath.Join(homeDir, ".goclaw")
 	return config.Load(configDir)
 }
 

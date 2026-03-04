@@ -476,7 +476,7 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	case "config":
 		if r.Method == http.MethodGet {
 			// Read actual config file
-			configPath := os.ExpandEnv("$HOME/.zeroclaw/config.toml")
+			configPath := os.ExpandEnv("$HOME/.goclaw/config.toml")
 			content, err := os.ReadFile(configPath)
 			if err != nil {
 				// Return default if config doesn't exist

@@ -12,7 +12,7 @@ import (
 
 func main() {
 	// 创建技能加载器
-	skillsDir := "/Users/haha/.zeroclaw/workspace/skills"
+	skillsDir := "/Users/haha/.goclaw/workspace/skills"
 	loader := skills.NewSkillLoader(skillsDir)
 
 	// 加载所有技能

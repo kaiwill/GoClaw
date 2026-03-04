@@ -55,13 +55,13 @@ func Default() *Config {
 	homeDir, _ := os.UserHomeDir()
 	defaultSkillsDir := "."
 	if homeDir != "" {
-		defaultSkillsDir = filepath.Join(homeDir, ".zeroclaw", "workspace", "skills")
+		defaultSkillsDir = filepath.Join(homeDir, ".goclaw", "workspace", "skills")
 	}
 
 	// Set default static directory
 	defaultStaticDir := "./web/dist"
 	if homeDir != "" {
-		defaultStaticDir = filepath.Join(homeDir, ".zeroclaw", "goclaw", "web", "dist")
+		defaultStaticDir = filepath.Join(homeDir, ".goclaw", "web", "dist")
 	}
 
 	return &Config{
@@ -242,7 +242,7 @@ func (c *Config) GetSkillsDir() string {
 	// Fallback to default
 	homeDir, _ := os.UserHomeDir()
 	if homeDir != "" {
-		return filepath.Join(homeDir, ".zeroclaw", "workspace", "skills")
+		return filepath.Join(homeDir, ".goclaw", "workspace", "skills")
 	}
 	return "."
 }
