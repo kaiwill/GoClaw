@@ -16,6 +16,7 @@ type Skill struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
 	Version     string                 `json:"version"`
+	Author      string                 `json:"author,omitempty"`
 	Commands    []SkillCommand         `json:"commands"`
 	Metadata    map[string]interface{} `json:"metadata"`
 	Tools       []SkillTool            `json:"tools,omitempty"`
@@ -26,6 +27,8 @@ type SkillCommand struct {
 	Name        string           `json:"name"`
 	Description string           `json:"description"`
 	Aliases     []string         `json:"aliases,omitempty"`
+	Command     string           `json:"command,omitempty"`
+	Kind        string           `json:"kind,omitempty"`
 	Parameters  []SkillParameter `json:"parameters,omitempty"`
 }
 
@@ -94,7 +97,9 @@ func (l *SkillLoader) LoadSkills() error {
 			var skill Skill
 			decoder := json.NewDecoder(bytes.NewReader(data))
 			decoder.DisallowUnknownFields()
-			if err := decoder.Decode(&skill); err == nil {
+			if err := decoder.Decode(&skill); err != nil {
+				// Try SKILL.toml if skill.json fails
+			} else {
 				// Use directory name as skill name
 				skill.Name = entry.Name()
 				
@@ -102,11 +107,15 @@ func (l *SkillLoader) LoadSkills() error {
 				if len(skill.Tools) == 0 && len(skill.Commands) > 0 {
 					skill.Tools = make([]SkillTool, 0, len(skill.Commands))
 					for _, cmd := range skill.Commands {
+						command := fmt.Sprintf("./%s.sh", cmd.Name)
+						if cmd.Command != "" {
+							command = cmd.Command
+						}
 						tool := SkillTool{
 							Name:        cmd.Name,
 							Description: cmd.Description,
 							Kind:        "shell",
-							Command:      fmt.Sprintf("./%s.sh", cmd.Name),
+							Command:      command,
 							Parameters:  cmd.Parameters,
 						}
 						skill.Tools = append(skill.Tools, tool)
@@ -115,8 +124,8 @@ func (l *SkillLoader) LoadSkills() error {
 				l.mu.Lock()
 				l.skills[skill.Name] = &skill
 				l.mu.Unlock()
-				continue
 			}
+			continue
 		}
 
 		// Try SKILL.toml (new format similar to zeroclaw-fix-cn)
