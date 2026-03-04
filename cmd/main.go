@@ -252,7 +252,7 @@ var agentCmd = &cobra.Command{
 
 		// Add skill-based tools
 		agentTools = append(agentTools,
-			tools.NewEmailTool(skillsDir),
+			//tools.NewEmailTool(skillsDir),
 			//tools.NewStockAnalyzerTool(skillsDir),
 		)
 
@@ -400,7 +400,7 @@ var agentCmd = &cobra.Command{
 
 		// Add skill-based tools
 		agentTools = append(agentTools,
-			tools.NewEmailTool(skillsDir),
+			//tools.NewEmailTool(skillsDir),
 			//tools.NewStockAnalyzerTool(skillsDir),
 		)
 
@@ -526,7 +526,7 @@ var daemonCmd = &cobra.Command{
 
 		// Add skill-based tools
 		agentTools = append(agentTools,
-			tools.NewEmailTool(skillsDir),
+			//tools.NewEmailTool(skillsDir),
 			//tools.NewStockAnalyzerTool(skillsDir),
 		)
 

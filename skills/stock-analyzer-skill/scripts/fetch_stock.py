@@ -50,6 +50,37 @@ except ImportError:
 BASE_API = "https://push2.eastmoney.com/api/qt/stock/get"
 
 
+def normalize_market(market: str) -> str:
+    """
+    标准化市场参数，支持多种格式
+    支持的格式：sh, sh-沪市, 沪市, 上海, sha, shanghai 等
+    """
+    if not market or market == '':
+        return 'auto'
+    
+    m = market.lower().strip()
+    
+    # 支持的格式：sh, sh-沪市, 沪市, 上海, sha, shanghai 等
+    if m.startswith('sh') or '沪' in m or m == '上海' or m == 'sha' or m == 'shanghai':
+        return 'sh'
+    if m.startswith('sz') or '深' in m or m == '深圳' or m == 'sze' or m == 'shenzhen':
+        return 'sz'
+    if m.startswith('bj') or '京' in m or m == '北京' or m == 'bse':
+        return 'bj'
+    if m.startswith('hk') or '港' in m or m == '香港' or m == 'hongkong':
+        return 'hk'
+    if m.startswith('us') or '美' in m or m == '美国' or m == 'usa':
+        return 'us'
+    
+    # 如果是有效的值，直接返回
+    valid_markets = ['sh', 'sz', 'bj', 'hk', 'us', 'auto']
+    if m in valid_markets:
+        return m
+    
+    # 默认自动识别
+    return 'auto'
+
+
 def get_secid(code: str, market: str) -> str:
     """
     根据市场类型生成 secid
@@ -170,6 +201,195 @@ def search_stock_code(name: str) -> Optional[Dict[str, str]]:
     return None
 
 
+def safe_price(val, divisor=100):
+    if val is None or val == '-':
+        return '-'
+    try:
+        return f"{float(val) / divisor:.2f}"
+    except:
+        return '-'
+
+
+def safe_percent(val):
+    if val is None or val == '-':
+        return '-'
+    try:
+        return f"{float(val) / 100:.2f}%"
+    except:
+        return '-'
+
+
+def safe_amount(val):
+    if val is None or val == '-':
+        return '-'
+    try:
+        v = float(val)
+        if v >= 1e12:
+            return f"{v/1e12:.2f}万亿"
+        elif v >= 1e8:
+            return f"{v/1e8:.2f}亿"
+        elif v >= 1e4:
+            return f"{v/1e4:.2f}万"
+        else:
+            return f"{v:.2f}"
+    except:
+        return '-'
+
+
+def fetch_financial_indicators(code: str, market: str, retry: int = 3) -> Dict[str, Any]:
+    """通过东方财富 API 获取股票财务指标数据（股息率、有息负债等）"""
+    result = {
+        "success": False,
+        "code": code,
+        "market": market.upper(),
+        "data": {},
+        "error": None,
+        "source": "东方财富财务指标API",
+        "fetch_time": time.strftime("%Y-%m-%d %H:%M:%S")
+    }
+    
+    try:
+        secid = get_secid(code, market)
+        
+        # 财务指标字段：包括股息率、有息负债等
+        # f184: 股息率, f185: 每股股息, f186: 分红总额
+        # f187: 有息负债, f188: 负债合计, f189: 资产合计
+        # f190: 流动负债, f191: 非流动负债, f192: 资产负债率
+        fields = "f184,f185,f186,f187,f188,f189,f190,f191,f192,f193,f194,f195,f196,f197,f198,f199,f200"
+        
+        params = {
+            "secid": secid,
+            "fields": fields,
+            "ut": "fa5fd1943c7b386f172d6893dbfba10b"
+        }
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://quote.eastmoney.com/',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br'
+        }
+        
+        print(f"正在获取财务指标数据: {secid}...", file=sys.stderr)
+        
+        api_data = None
+        last_error = None
+        
+        for attempt in range(retry):
+            try:
+                if USE_REQUESTS:
+                    session = requests.Session()
+                    response = session.get(BASE_API, params=params, headers=headers, timeout=15)
+                    api_data = response.json()
+                else:
+                    import gzip
+                    url = f"{BASE_API}?{urllib.parse.urlencode(params)}"
+                    req = urllib.request.Request(url)
+                    for k, v in headers.items():
+                        req.add_header(k, v)
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        if resp.info().get('Content-Encoding') == 'gzip':
+                            data = gzip.decompress(resp.read())
+                        else:
+                            data = resp.read()
+                        api_data = json.loads(data.decode('utf-8'))
+                break
+            except Exception as e:
+                last_error = e
+                if attempt < retry - 1:
+                    print(f"重试 {attempt + 2}/{retry}...", file=sys.stderr)
+                    time.sleep(1)
+        
+        if api_data is None:
+            result["error"] = f"网络请求失败: {last_error}"
+            return result
+        
+        if api_data.get('rc') != 0 or not api_data.get('data'):
+            # 财务指标可能没有数据，但不影响主流程
+            result["error"] = "财务指标数据为空（可能为非交易时间或数据未更新）"
+            return result
+        
+        raw = api_data['data']
+        
+        def safe_value(val, default='-'):
+            if val is None or val == '-':
+                return default
+            try:
+                return float(val)
+            except:
+                return default
+        
+        def safe_percent(val):
+            if val is None or val == '-':
+                return '-'
+            try:
+                return f"{float(val) / 100:.2f}%"
+            except:
+                return '-'
+        
+        def safe_amount(val):
+            if val is None or val == '-':
+                return '-'
+            try:
+                v = float(val)
+                if v >= 1e12:
+                    return f"{v/1e12:.2f}万亿"
+                elif v >= 1e8:
+                    return f"{v/1e8:.2f}亿"
+                elif v >= 1e4:
+                    return f"{v/1e4:.2f}万"
+                else:
+                    return f"{v:.2f}"
+            except:
+                return '-'
+        
+        data = {}
+        
+        # 股息相关
+        if raw.get('f184') is not None:
+            data['dividend_yield'] = safe_percent(raw.get('f184'))
+        if raw.get('f185') is not None:
+            data['dividend_per_share'] = safe_price(raw.get('f185'), 100)
+        if raw.get('f186') is not None:
+            data['total_dividend'] = safe_amount(raw.get('f186'))
+        
+        # 负债相关
+        if raw.get('f187') is not None:
+            data['interest_bearing_debt'] = safe_amount(raw.get('f187'))
+        if raw.get('f188') is not None:
+            data['total_debt'] = safe_amount(raw.get('f188'))
+        if raw.get('f189') is not None:
+            data['total_assets'] = safe_amount(raw.get('f189'))
+        if raw.get('f190') is not None:
+            data['current_liabilities'] = safe_amount(raw.get('f190'))
+        if raw.get('f191') is not None:
+            data['non_current_liabilities'] = safe_amount(raw.get('f191'))
+        if raw.get('f192') is not None:
+            data['debt_to_asset_ratio'] = safe_percent(raw.get('f192'))
+        
+        # 计算有息负债率
+        if raw.get('f187') is not None and raw.get('f188') is not None:
+            interest_bearing_debt = safe_value(raw.get('f187'))
+            total_debt = safe_value(raw.get('f188'))
+            if interest_bearing_debt != '-' and total_debt != '-' and total_debt != 0:
+                data['interest_bearing_debt_ratio'] = f"{(interest_bearing_debt / total_debt * 100):.2f}%"
+        
+        result['data'] = data
+        
+        if data:
+            result['success'] = True
+            print(f"✅ 成功获取财务指标数据", file=sys.stderr)
+        else:
+            result['error'] = "无法获取有效财务指标数据"
+            
+    except Exception as e:
+        result['error'] = str(e)
+        print(f"❌ 获取财务指标数据失败: {result['error']}", file=sys.stderr)
+    
+    return result
+
+
 def fetch_stock_api(code: str, market: str, retry: int = 3) -> Dict[str, Any]:
     """通过东方财富 API 获取股票实时数据"""
     result = {
@@ -256,38 +476,6 @@ def fetch_stock_api(code: str, market: str, retry: int = 3) -> Dict[str, Any]:
         
         raw = api_data['data']
         
-        def safe_price(val, divisor=100):
-            if val is None or val == '-':
-                return '-'
-            try:
-                return f"{float(val) / divisor:.2f}"
-            except:
-                return '-'
-        
-        def safe_percent(val):
-            if val is None or val == '-':
-                return '-'
-            try:
-                return f"{float(val) / 100:.2f}%"
-            except:
-                return '-'
-        
-        def safe_amount(val):
-            if val is None or val == '-':
-                return '-'
-            try:
-                v = float(val)
-                if v >= 1e12:
-                    return f"{v/1e12:.2f}万亿"
-                elif v >= 1e8:
-                    return f"{v/1e8:.2f}亿"
-                elif v >= 1e4:
-                    return f"{v/1e4:.2f}万"
-                else:
-                    return f"{v:.2f}"
-            except:
-                return '-'
-        
         data = {
             'code': raw.get('f57', code),
             'name': raw.get('f58', ''),
@@ -314,6 +502,11 @@ def fetch_stock_api(code: str, market: str, retry: int = 3) -> Dict[str, Any]:
         urls = get_stock_url(code, market)
         result['urls'] = urls
         result['url'] = urls.get('quote', '')
+        
+        # 获取财务指标数据（股息率、有息负债等）
+        financial_result = fetch_financial_indicators(code, market)
+        if financial_result['success']:
+            result['data']['financial_indicators'] = financial_result['data']
         
         if data.get('price') and data['price'] != '-':
             result['success'] = True
@@ -535,6 +728,28 @@ def format_output(result: Dict[str, Any], output_format: str = "json") -> str:
             lines.append(f"  市盈率(PE): {data.get('pe', '-')}")
             lines.append(f"  市净率(PB): {data.get('pb', '-')}")
             
+            # 财务指标（股息率、有息负债等）
+            if 'financial_indicators' in data:
+                fi = data['financial_indicators']
+                lines.append(f"")
+                lines.append(f"  ═══ 财务指标 ═══")
+                if 'dividend_yield' in fi:
+                    lines.append(f"  股息率:     {fi.get('dividend_yield', '-')}")
+                if 'dividend_per_share' in fi:
+                    lines.append(f"  每股股息:   {fi.get('dividend_per_share', '-')}")
+                if 'total_dividend' in fi:
+                    lines.append(f"  分红总额:   {fi.get('total_dividend', '-')}")
+                if 'interest_bearing_debt' in fi:
+                    lines.append(f"  有息负债:   {fi.get('interest_bearing_debt', '-')}")
+                if 'total_debt' in fi:
+                    lines.append(f"  负债合计:   {fi.get('total_debt', '-')}")
+                if 'total_assets' in fi:
+                    lines.append(f"  资产合计:   {fi.get('total_assets', '-')}")
+                if 'debt_to_asset_ratio' in fi:
+                    lines.append(f"  资产负债率: {fi.get('debt_to_asset_ratio', '-')}")
+                if 'interest_bearing_debt_ratio' in fi:
+                    lines.append(f"  有息负债率: {fi.get('interest_bearing_debt_ratio', '-')}")
+            
             # 资金流向数据
             if 'main_flow' in data or 'main_ratio' in data:
                 lines.append(f"")
@@ -570,8 +785,7 @@ def main():
     )
     parser.add_argument("code", nargs='?', default=None, help="股票代码或名称")
     parser.add_argument("--market", "-m", default="auto",
-                        choices=["hk", "us", "sh", "sz", "bj", "auto"],
-                        help="市场类型 (默认: auto)")
+                        help="市场类型 (可选: sh-沪市, sz-深市, hk-港股, us-美股, auto-自动识别, 默认: auto)")
     parser.add_argument("--output", "-o", default="json",
                         choices=["json", "text"],
                         help="输出格式 (默认: json)")
@@ -590,6 +804,10 @@ def main():
     parser.add_argument("--with-flow", action="store_true", help="(保留兼容，等同于--fund-flow)")
     
     args = parser.parse_args()
+    
+    # 预处理 market 参数，使用 normalize_market 函数标准化
+    if args.market:
+        args.market = normalize_market(args.market)
     
     # 处理直接URL访问
     if args.url:

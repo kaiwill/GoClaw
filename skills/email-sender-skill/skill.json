@@ -5,24 +5,14 @@
   "commands": [
     {
       "name": "email_send",
-      "description": "发送邮件到指定收件人",
+      "description": "【邮件发送工具】通过 SMTP 发送邮件到指定收件人。当用户要求发送邮件时使用此工具，无需其他操作。",
+      "kind": "shell",
+      "command": "EMAIL_DATA='{{data}}' node index.js",
       "parameters": [
         {
-          "name": "recipient",
+          "name": "data",
           "type": "string",
-          "description": "收件人邮箱地址",
-          "required": true
-        },
-        {
-          "name": "subject",
-          "type": "string",
-          "description": "邮件主题",
-          "required": true
-        },
-        {
-          "name": "body",
-          "type": "string",
-          "description": "邮件正文内容",
+          "description": "邮件数据（JSON 格式，包含 recipient、subject、body）",
           "required": true
         }
       ]

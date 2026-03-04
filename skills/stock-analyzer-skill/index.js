@@ -43,11 +43,48 @@ async function executePython(args) {
     });
 }
 
+// 规范化 market 参数，支持多种格式
+function normalizeMarket(market) {
+    if (!market || market === '') {
+        return 'auto';
+    }
+    
+    const m = market.toLowerCase().trim();
+    
+    // 支持的格式：sh, sh-沪市, 沪市, 上海, sha, shanghai 等
+    if (m.startsWith('sh') || m.includes('沪') || m === '上海' || m === 'sha' || m === 'shanghai') {
+        return 'sh';
+    }
+    if (m.startsWith('sz') || m.includes('深') || m === '深圳' || m === 'sze' || m === 'shenzhen') {
+        return 'sz';
+    }
+    if (m.startsWith('bj') || m.includes('京') || m === '北京' || m === 'bse') {
+        return 'bj';
+    }
+    if (m.startsWith('hk') || m.includes('港') || m === '香港' || m === 'hongkong') {
+        return 'hk';
+    }
+    if (m.startsWith('us') || m.includes('美') || m === '美国' || m === 'usa') {
+        return 'us';
+    }
+    
+    // 如果是有效的值，直接返回
+    const validMarkets = ['sh', 'sz', 'bj', 'hk', 'us', 'auto'];
+    if (validMarkets.includes(m)) {
+        return m;
+    }
+    
+    // 默认自动识别
+    return 'auto';
+}
+
 async function analyzeStock(stock, market = 'auto') {
-    console.log(`[INFO] 开始分析股票: ${stock} (市场: ${market})`);
+    // 规范化 market 参数
+    const normalizedMarket = normalizeMarket(market);
+    console.log(`[INFO] 开始分析股票: ${stock} (市场: ${market} -> ${normalizedMarket})`);
     
     try {
-        const args = [stock, '--market', market, '--output', 'json'];
+        const args = [stock, '--market', normalizedMarket, '--output', 'json'];
         const result = await executePython(args);
         
         if (result.success) {

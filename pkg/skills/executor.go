@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os/exec"
 	"path/filepath"
@@ -167,8 +168,9 @@ func (e *SkillToolExecutor) executeShell(ctx context.Context, args map[string]in
 		command = strings.ReplaceAll(command, placeholder, fmt.Sprintf("%v", v))
 	}
 
-	parts := strings.Fields(command)
-	if len(parts) == 0 {
+	log.Printf("Executing shell command: %s", command)
+
+	if command == "" {
 		return &tools.ToolResult{
 			Success: false,
 			Output:  "",
@@ -176,8 +178,8 @@ func (e *SkillToolExecutor) executeShell(ctx context.Context, args map[string]in
 		}, nil
 	}
 
-	// Set working directory to skill directory
-	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
+	// Use shell to execute the command to support environment variables and complex syntax
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	if e.skillDir != "" {
 		cmd.Dir = e.skillDir
 	}
@@ -297,6 +299,8 @@ func (e *SkillToolExecutor) executeScript(ctx context.Context, args map[string]i
 		placeholder := "{{" + k + "}}"
 		script = strings.ReplaceAll(script, placeholder, fmt.Sprintf("%v", v))
 	}
+
+	log.Printf("Executing script: %s", script)
 
 	if script == "" {
 		return &tools.ToolResult{
