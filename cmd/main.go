@@ -189,12 +189,12 @@ var agentCmd = &cobra.Command{
 		}
 
 		// Create memory backend
-	memoryBackend := memory.NewNoneMemoryBackend()
+		memoryBackend := memory.NewNoneMemoryBackend()
 
-	// Create memory implementation
-	memImpl := &memoryImpl{
-		backend: memoryBackend,
-	}
+		// Create memory implementation
+		memImpl := &memoryImpl{
+			backend: memoryBackend,
+		}
 
 	// Create tools for the agent
 	agentTools := []tools.Tool{
@@ -249,7 +249,6 @@ var agentCmd = &cobra.Command{
 
 		// Get skills directory from config
 		skillsDir := cfg.GetSkillsDir()
-		log.Printf("Skills directory: %s", skillsDir)
 
 		// Add skill-based tools
 		agentTools = append(agentTools,
@@ -257,17 +256,14 @@ var agentCmd = &cobra.Command{
 			//tools.NewStockAnalyzerTool(skillsDir),
 		)
 
-		log.Printf("Creating skill loader with directory: %s", skillsDir)
-		skillLoader := skills.NewSkillLoader(skillsDir)
-		log.Printf("Skill loader created: %v", skillLoader)
-
-		agt, err := agent.NewAgentBuilder().
-			WithProvider(providerInstance).
-			WithModelName(modelToUse).
-			WithMemory(agent.NewNoneMemoryBackend()).
-			WithTools(agentTools).
-			WithSkillLoader(skillLoader).
-			Build()
+	agt, err := agent.NewAgentBuilder().
+	WithProvider(providerInstance).
+	WithModelName(model).
+	WithTemperature(temperature).
+	WithTools(agentTools).
+			WithSkillLoader(skills.NewSkillLoader(skillsDir)).
+	WithMemory(memImpl).
+	Build()
 	if err != nil {
 		return fmt.Errorf("failed to build agent: %w", err)
 	}
