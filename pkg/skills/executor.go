@@ -183,8 +183,6 @@ func (e *SkillToolExecutor) executeShell(ctx context.Context, args map[string]in
 	}
 	
 	output, err := cmd.CombinedOutput()
-	fmt.Printf("[DEBUG] Command output: %s\n", string(output))
-	fmt.Printf("[DEBUG] Command error: %v\n", err)
 
 	if err != nil {
 		return &tools.ToolResult{
