@@ -98,6 +98,7 @@ func (l *SkillLoader) LoadSkills() error {
 			decoder := json.NewDecoder(bytes.NewReader(data))
 			decoder.DisallowUnknownFields()
 			if err := decoder.Decode(&skill); err != nil {
+				log.Printf("Failed to decode skill.json for %s: %v", entry.Name(), err)
 				// Try SKILL.toml if skill.json fails
 			} else {
 				// Use directory name as skill name
@@ -121,6 +122,7 @@ func (l *SkillLoader) LoadSkills() error {
 						skill.Tools = append(skill.Tools, tool)
 					}
 				}
+				log.Printf("Loaded skill %s from skill.json with %d tools", skill.Name, len(skill.Tools))
 				l.mu.Lock()
 				l.skills[skill.Name] = &skill
 				l.mu.Unlock()
