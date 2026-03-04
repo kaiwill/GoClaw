@@ -261,6 +261,11 @@ func (a *Agent) ProcessMessage(ctx context.Context, message string) (*types.Chat
 	// Build prompt
 	prompt := a.promptBuilder.Build(contextStr, message)
 
+	log.Printf("Available tools: %d", len(a.toolSpecs))
+	for i, spec := range a.toolSpecs {
+		log.Printf("  Tool %d: %s - %s", i+1, spec.Name, spec.Description)
+	}
+
 	// Call LLM
 	response, err := a.provider.Chat(ctx, &providers.ChatRequest{
 		Messages: []types.ChatMessage{
@@ -271,6 +276,14 @@ func (a *Agent) ProcessMessage(ctx context.Context, message string) (*types.Chat
 	}, a.modelName, a.temperature)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call LLM: %w", err)
+	}
+
+	log.Printf("LLM response has tool calls: %v", response.HasToolCalls())
+	if response.HasToolCalls() {
+		log.Printf("Tool calls count: %d", len(response.ToolCalls))
+		for i, toolCall := range response.ToolCalls {
+			log.Printf("  Tool call %d: %s, args: %v", i+1, toolCall.Name, toolCall.Arguments)
+		}
 	}
 
 	// Process response
