@@ -97,18 +97,18 @@ func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	
 	// Handle API routes FIRST (before static files)
-	mux.HandleFunc("/health", s.handleHealth)
-	mux.HandleFunc("/v1/chat/completions", s.handleChatCompletions)
-	mux.HandleFunc("/v1/completions", s.handleCompletions)
-	mux.HandleFunc("/v1/models", s.handleModels)
-	mux.HandleFunc("/v1/embeddings", s.handleEmbeddings)
-	mux.HandleFunc("/sse", s.handleSSE)
+	mux.HandleFunc("/api/health", s.handleHealth)
+	mux.HandleFunc("/api/v1/chat/completions", s.handleChatCompletions)
+	mux.HandleFunc("/api/v1/completions", s.handleCompletions)
+	mux.HandleFunc("/api/v1/models", s.handleModels)
+	mux.HandleFunc("/api/v1/embeddings", s.handleEmbeddings)
+	mux.HandleFunc("/api/sse", s.handleSSE)
 	
 	// WebSocket route for agent chat
-	mux.HandleFunc("/ws/chat", s.handleWebSocket)
-	mux.HandleFunc("/ws", s.handleWebSocket)
+	mux.HandleFunc("/api/ws/chat", s.handleWebSocket)
+	mux.HandleFunc("/api/ws", s.handleWebSocket)
 	
-	// Generic /api/* handler (handles all /api/* paths)
+	// Generic /api/* handler (handles all other /api/* paths)
 	mux.HandleFunc("/api/", s.handleAPI)
 	
 	// Serve static files from configured directory or embedded filesystem
@@ -467,6 +467,65 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 			if restPath != "" {
 				memoryKey = restPath
 			}
+		}
+		
+		// Handle recall endpoint
+		if memoryKey == "recall" {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+				return
+			}
+
+			if s.memoryBackend == nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"error": "memory backend not available"})
+				return
+			}
+
+			var req struct {
+				Query    string  `json:"query"`
+				Limit    int     `json:"limit"`
+				Category *string `json:"category,omitempty"`
+			}
+
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+
+			if req.Query == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "query is required"})
+				return
+			}
+
+			if req.Limit <= 0 {
+				req.Limit = 5
+			}
+
+			if mb, ok := s.memoryBackend.(interface {
+				Recall(ctx context.Context, query string, limit int, category *string) ([]agent.MemoryEntry, error)
+			}); ok {
+				entries, err := mb.Recall(r.Context(), req.Query, req.Limit, req.Category)
+				if err != nil {
+					w.WriteHeader(http.StatusInternalServerError)
+					json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+					return
+				}
+
+				response := map[string]interface{}{
+					"success": true,
+					"output":  formatMemoryEntries(entries),
+				}
+				json.NewEncoder(w).Encode(response)
+				return
+			}
+
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "memory backend not available"})
+			return
 		}
 		
 		if r.Method == http.MethodGet && memoryKey == "" {
@@ -1033,6 +1092,24 @@ func splitProtocols(s string) []string {
 	return result
 }
 
+// formatMemoryEntries formats memory entries for output
+func formatMemoryEntries(entries []agent.MemoryEntry) string {
+	if len(entries) == 0 {
+		return "No memories found matching that query."
+	}
+
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("Found %d memories:\n", len(entries)))
+	for _, entry := range entries {
+		category := "general"
+		if entry.Category != nil {
+			category = *entry.Category
+		}
+		result.WriteString(fmt.Sprintf("- [%s] %s: %s\n", category, entry.Key, entry.Content))
+	}
+	return result.String()
+}
+
 // handleWebSocket handles WebSocket connections for /ws/chat
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	log.Printf("WebSocket request: %s %s", r.Method, r.URL.Path)
@@ -1189,6 +1266,7 @@ func (s *Server) handleAgentChat(conn *websocket.Conn, sessionID, content string
 	if data, err := json.Marshal(resp); err == nil {
 		conn.WriteMessage(websocket.TextMessage, data)
 		log.Printf("Sent response for session %s", sessionID)
+		log.Printf("============end=====================")
 	}
 }
 

@@ -47,7 +47,7 @@ export class WebSocketClient {
     this.clearReconnectTimer()
 
     const token = getToken()
-    const url = `${this.baseUrl}/ws/chat`
+    const url = `${this.baseUrl}/api/ws/chat`
     const protocols = ['zeroclaw.v1']
     if (token) {
       protocols.push(`bearer.${token}`)

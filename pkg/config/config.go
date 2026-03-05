@@ -19,9 +19,10 @@ type Config struct {
 }
 
 type AgentConfig struct {
-	SystemPrompt string
-	MaxTokens    int
-	Temperature  float64
+	SystemPrompt        string
+	MaxTokens           int
+	Temperature          float64
+	MaxToolIterations    int
 }
 
 type ProviderConfig struct {
@@ -67,9 +68,10 @@ func Default() *Config {
 
 	return &Config{
 		Agent: AgentConfig{
-			SystemPrompt: "You are GoClaw, a helpful AI assistant.",
-			MaxTokens:    4096,
-			Temperature:  0.7,
+			SystemPrompt:        "You are GoClaw, a helpful AI assistant.",
+			MaxTokens:           4096,
+			Temperature:          0.7,
+			MaxToolIterations:    15,
 		},
 		Provider: ProviderConfig{
 			Name:  "openai",
@@ -109,6 +111,7 @@ func Load(configDir string) (*Config, error) {
 	cfg.Provider.APIKey = parseTomlString(content, "api_key", "")
 	cfg.Provider.BaseURL = parseTomlString(content, "base_url", "")
 	cfg.Agent.Temperature = parseTomlFloat(content, "default_temperature", cfg.Agent.Temperature)
+	cfg.Agent.MaxToolIterations = parseTomlInt(content, "max_tool_iterations", cfg.Agent.MaxToolIterations)
 	cfg.SkillsDir = parseTomlString(content, "skills_dir", cfg.SkillsDir)
 	cfg.Gateway.StaticDir = parseTomlString(content, "static_dir", cfg.Gateway.StaticDir)
 

@@ -5,7 +5,7 @@
   "commands": [
     {
       "name": "email_send",
-      "description": "【邮件发送工具】通过 SMTP 发送邮件到指定收件人。当用户要求发送邮件时使用此工具，无需其他操作。",
+      "description": "【邮件发送工具】通过 SMTP 发送邮件到指定收件人。重要使用流程：1) 先检查用户消息中是否已提供邮箱地址，如果有则直接使用；2) 如果用户未提供邮箱地址，必须先通过 memory_recall 工具查找用户的邮箱地址，查找时只使用英文关键词如 'email'、'mail'、'my_email'，不要使用中文关键词；3) 只有获取到有效的邮箱地址后，才能调用此工具发送邮件。4) 如果多次尝试仍找不到，向用户询问邮箱地址。注意：必须先获取到邮箱地址才能发送邮件。",
       "kind": "shell",
       "command": "EMAIL_DATA='{{data}}' node index.js",
       "parameters": [

@@ -27,7 +27,17 @@ func (b *DefaultSystemPromptBuilder) Build(context, message string) string {
 2. Use the provided tools to answer questions and complete tasks.
 3. Format responses clearly and concisely.
 4. If you don't know the answer, say so.
-5. When user asks to send something to their email or mailbox, first use the memory_recall tool to search for "email" to find their email address.
+5. Task completion strategy:
+   - Carefully analyze the user's complete request, including all parts
+   - Break down multi-step tasks into sequential actions
+   - Complete ALL parts of the request before stopping
+   - For example, if user says "analyze stock and send to email", you must: 
+     a) Analyze the stock
+     b) Find the email address (try memory_recall with different keywords)
+     c) Send the analysis to that email
+   - Do not stop after completing only part of the request
+6. Carefully read each tool's description for specific usage instructions and requirements.
+7. Stop immediately after completing the ENTIRE user request. Do not make unnecessary tool calls or continue working after the task is done.
 
 Context:
 %s

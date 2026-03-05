@@ -14,7 +14,7 @@ import (
 // Constants for loop configuration.
 const (
 	// DefaultMaxToolIterations is the default maximum number of tool iterations.
-	DefaultMaxToolIterations = 10
+	DefaultMaxToolIterations = 15
 	// DefaultMaxHistoryMessages is the default maximum number of history messages.
 	DefaultMaxHistoryMessages = 50
 	// CompactionKeepRecentMessages is the number of recent messages to keep after compaction.

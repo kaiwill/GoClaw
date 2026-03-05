@@ -322,6 +322,9 @@ var agentCmd = &cobra.Command{
 			WithSkillLoader(skills.NewSkillLoader(skillsDir)).
 	WithMemory(memImpl).
 	WithAutoSave(cfg.Memory.AutoSave).
+	WithConfig(agent.AgentConfig{
+			MaxToolIterations: cfg.Agent.MaxToolIterations,
+		}).
 	Build()
 		if err != nil {
 			return fmt.Errorf("创建代理失败: %w", err)
@@ -458,6 +461,9 @@ var agentCmd = &cobra.Command{
 			WithTools(agentTools).
 			WithSkillLoader(skills.NewSkillLoader(skillsDir)).
 			WithAutoSave(cfg.Memory.AutoSave).
+			WithConfig(agent.AgentConfig{
+				MaxToolIterations: cfg.Agent.MaxToolIterations,
+			}).
 			Build()
 		if err != nil {
 			return fmt.Errorf("创建代理失败: %w", err)
@@ -588,6 +594,9 @@ var daemonCmd = &cobra.Command{
 			WithTools(agentTools).
 			WithSkillLoader(skillLoader).
 			WithAutoSave(cfg.Memory.AutoSave).
+			WithConfig(agent.AgentConfig{
+				MaxToolIterations: cfg.Agent.MaxToolIterations,
+			}).
 			Build()
 		if err != nil {
 			log.Printf("构建代理失败: %v", err)
@@ -1025,6 +1034,9 @@ func initializeConfig(configDir string) error {
 name = "openai"
 model = "gpt-4"
 # api_key = "your-api-key-here"
+
+[agent]
+max_tool_iterations = 15
 
 [memory]
 backend = "none"

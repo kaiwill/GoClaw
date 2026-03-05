@@ -68,7 +68,7 @@ function unwrapField<T>(value: T | Record<string, T>, key: string): T {
 }
 
 export async function pair(code: string): Promise<{ token: string }> {
-  const response = await fetch('/pair', {
+  const response = await fetch('/api/pair', {
     method: 'POST',
     headers: { 'X-Pairing-Code': code },
   });
@@ -84,7 +84,7 @@ export async function pair(code: string): Promise<{ token: string }> {
 }
 
 export async function getPublicHealth(): Promise<{ require_pairing: boolean; paired: boolean }> {
-  const response = await fetch('/health');
+  const response = await fetch('/api/health');
   if (!response.ok) {
     throw new Error(`Health check failed (${response.status})`);
   }
