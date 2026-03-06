@@ -86,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onUnmounted, nextTick, watch } from 'vue'
+import { ref, onUnmounted, onMounted, nextTick, watch } from 'vue'
 import { Send, Bot, User, AlertCircle } from 'lucide-vue-next'
 import type { WsMessage } from '../types/api'
 import { WebSocketClient } from '../lib/ws'
@@ -113,7 +113,7 @@ function makeMessageId(): string {
     .slice(2, 10)}`
 }
 
-const { isAuthenticated, loading } = useAuth()
+const { loading } = useAuth()
 const messages = ref<ChatMessage[]>([])
 const input = ref('')
 const typing = ref(false)
@@ -139,10 +139,19 @@ watch([messages, typing], () => {
 })
 
 // Connect WebSocket when auth state becomes ready
-watch([loading, isAuthenticated], ([newLoading, newAuth]) => {
-  if (!newLoading && newAuth && !wsRef.value?.connected) {
+watch(loading, (newLoading) => {
+  if (!newLoading && !wsRef.value?.connected) {
     connectWebSocket()
   }
+})
+
+// Try to connect on page mount
+onMounted(() => {
+  setTimeout(() => {
+    if (!wsRef.value?.connected) {
+      connectWebSocket()
+    }
+  }, 1000)
 })
 
 const connectWebSocket = () => {

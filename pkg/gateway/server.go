@@ -699,6 +699,11 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 			temperature = t
 		}
 		
+		wechatEnabled := false
+		if we, ok := s.config["wechat_enabled"].(bool); ok {
+			wechatEnabled = we
+		}
+		
 		response := map[string]interface{}{
 			"provider":       provider,
 			"model":          model,
@@ -709,6 +714,7 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 			"memory_backend": memoryBackend,
 			"paired":         false,
 			"channels":       map[string]bool{},
+			"wechatlogin":  wechatEnabled,
 			"health": map[string]interface{}{
 				"pid":           os.Getpid(),
 				"updated_at":    time.Now().Format(time.RFC3339),
@@ -1143,14 +1149,37 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Check for protocol header and respond accordingly
 	clientProtocols := r.Header.Get("Sec-WebSocket-Protocol")
 	responseHeader := http.Header{}
+	
+	// Extract and validate token from query parameters
+	var authToken *auth.Token
+	token := r.URL.Query().Get("token")
+	if token != "" && s.authService != nil {
+		// Try to validate as user token
+		if userToken, err := s.authService.ValidateUserToken(token); err == nil {
+			authToken = userToken
+			log.Printf("WebSocket authenticated as user: %s", userToken.Username)
+		} else if adminToken, err := s.authService.ValidateAdminToken(token); err == nil {
+			authToken = adminToken
+			log.Printf("WebSocket authenticated as admin: %s", adminToken.Username)
+		}
+	}
+	
+	// Accept zeroclaw.v1 protocol if offered
 	if clientProtocols != "" {
-		// Accept zeroclaw.v1 protocol if offered
-		for _, p := range splitProtocols(clientProtocols) {
+		protocols := splitProtocols(clientProtocols)
+		for _, p := range protocols {
 			if p == "zeroclaw.v1" {
 				responseHeader.Set("Sec-WebSocket-Protocol", "zeroclaw.v1")
 				break
 			}
 		}
+	}
+	
+	// If auth is enabled and no valid token, allow anonymous connection
+	// but log a warning
+	if s.authService != nil && authToken == nil {
+		log.Printf("WebSocket connection allowed: anonymous connection (no token provided)")
+		// Don't reject the connection, just allow anonymous access
 	}
 	
 	conn, err := upgrader.Upgrade(w, r, responseHeader)
@@ -1181,6 +1210,13 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	welcome := map[string]interface{}{
 		"type":    "connected",
 		"message": "WebSocket connected successfully",
+	}
+	if authToken != nil {
+		welcome["user"] = map[string]interface{}{
+			"id":       authToken.UserID,
+			"username": authToken.Username,
+			"is_admin": authToken.IsAdmin,
+		}
 	}
 	if data, err := json.Marshal(welcome); err == nil {
 		conn.WriteMessage(websocket.TextMessage, data)

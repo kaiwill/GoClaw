@@ -1,50 +1,56 @@
 <template>
-  <div class="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-    <div class="max-w-md w-full space-y-8">
-      <div class="text-center">
-        <h2 class="mt-6 text-3xl font-extrabold text-gray-900">
-          微信扫码登录
-        </h2>
-        <p class="mt-2 text-sm text-gray-600">
-          使用微信扫码登录您的账号
-        </p>
-      </div>
-
-      <div v-if="loading" class="bg-white p-8 rounded-lg shadow-md">
-        <div class="flex justify-center">
-          <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+  <div class="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
+    <div class="absolute top-4 right-4">
+      <router-link
+        to="/admin/login"
+        class="px-3 py-1.5 rounded-md text-sm text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
+      >
+        管理员登录
+      </router-link>
+    </div>
+    
+    <div class="max-w-md w-full">
+      <div class="text-center mb-8">
+        <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-2xl bg-green-600/20 mb-4">
+          <svg class="h-8 w-8 text-green-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+          </svg>
         </div>
-        <p class="mt-4 text-center text-gray-600">正在生成登录二维码...</p>
+        <h2 class="text-3xl font-bold text-white">微信扫码登录</h2>
+        <p class="mt-2 text-gray-400">使用微信扫码登录您的账号</p>
       </div>
 
-      <div v-else-if="loginUrl" class="bg-white p-8 rounded-lg shadow-md">
+      <div v-if="loading" class="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-8 shadow-2xl border border-gray-700/50">
+        <div class="flex flex-col items-center justify-center py-8">
+          <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
+          <p class="mt-4 text-gray-400">正在生成登录二维码...</p>
+        </div>
+      </div>
+
+      <div v-else-if="loginUrl" class="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-8 shadow-2xl border border-gray-700/50">
         <div class="flex justify-center">
-          <div class="w-64 h-64 bg-gray-100 flex items-center justify-center">
+          <div class="w-64 h-64 bg-white rounded-xl flex items-center justify-center p-4 shadow-lg">
             <img :src="qrcodeUrl" alt="微信登录二维码" class="max-w-full max-h-full" />
           </div>
         </div>
-        <p class="mt-4 text-center text-gray-600">请使用微信扫码登录</p>
-        <button @click="refreshQrCode" class="mt-4 w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+        <p class="mt-6 text-center text-gray-300">请使用微信扫码登录</p>
+        <button @click="refreshQrCode" class="mt-4 w-full py-3 px-4 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-medium rounded-lg shadow-lg shadow-green-600/25 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-green-500 transition-all duration-200">
           刷新二维码
         </button>
       </div>
 
-      <div v-else class="bg-white p-8 rounded-lg shadow-md">
-        <button @click="generateLoginUrl" class="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+      <div v-else class="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-8 shadow-2xl border border-gray-700/50">
+        <button @click="generateLoginUrl" class="w-full py-3 px-4 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-medium rounded-lg shadow-lg shadow-green-600/25 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-green-500 transition-all duration-200">
           开始微信登录
         </button>
       </div>
 
-      <div v-if="error" class="bg-red-50 border border-red-200 rounded-md p-4">
-        <div class="flex">
-          <div class="flex-shrink-0">
-            <svg class="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
-            </svg>
-          </div>
-          <div class="ml-3">
-            <h3 class="text-sm font-medium text-red-800">{{ error }}</h3>
-          </div>
+      <div v-if="error" class="mt-4 bg-red-500/10 border border-red-500/20 rounded-lg p-4">
+        <div class="flex items-center">
+          <svg class="h-5 w-5 text-red-400 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p class="text-sm text-red-400">{{ error }}</p>
         </div>
       </div>
     </div>
@@ -56,8 +62,11 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { getWechatLoginURL } from '../lib/api'
 import { setToken, setUser } from '../lib/auth'
 import { useRouter } from 'vue-router'
+import { useAuth } from '../hooks/useAuth'
+import { useStore } from '@/store'
 
 const router = useRouter()
+const { isAuthenticated } = useAuth()
 const loading = ref(false)
 const loginUrl = ref<string>('')
 const qrcodeUrl = ref<string>('')
@@ -69,6 +78,10 @@ const generateLoginUrl = async () => {
   error.value = ''
   try {
     const response = await getWechatLoginURL()
+    // 检查接口返回状态是否成功
+    if (!response.login_url) {
+      throw new Error('生成登录链接失败')
+    }
     loginUrl.value = response.login_url
     // 生成二维码图片（实际项目中可以使用qrcode库）
     qrcodeUrl.value = `https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent(response.login_url)}`
@@ -89,6 +102,10 @@ const checkCallback = () => {
   const token = urlParams.get('token')
   if (token) {
     setToken(token)
+    const store = useStore()
+    store.setIsLogin(true)
+    store.setIsAdmin(false)
+    isAuthenticated.value = true
     router.push('/')
     return true
   }
@@ -105,21 +122,26 @@ const connectWebSocket = () => {
   ws = new WebSocket(wsUrl)
   
   ws.onopen = function() {
-    console.log('WebSocket连接成功')
   }
   
   ws.onmessage = function(event) {
     try {
       const data = JSON.parse(event.data)
       if (data.type === 'login.success') {
-        setToken(data.token)
-        setUser(data.user)
-        router.push('/')
-        stopPolling()
-        if (ws) {
-          ws.close()
+          setToken(data.token)
+          setUser(data.user)
+          const store = useStore()
+          store.setIsLogin(true)
+          store.setIsAdmin(false)
+          isAuthenticated.value = true
+          setTimeout(() => {
+            router.push('/')
+          }, 100)
+          stopPolling()
+          if (ws) {
+            ws.close()
+          }
         }
-      }
     } catch (err) {
       console.error('WebSocket消息解析失败:', err)
     }
@@ -130,7 +152,6 @@ const connectWebSocket = () => {
   }
   
   ws.onclose = function() {
-    console.log('WebSocket连接关闭')
   }
 }
 

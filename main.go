@@ -483,6 +483,7 @@ var agentCmd = &cobra.Command{
 		srv.SetConfig("model", modelToUse)
 		srv.SetConfig("temperature", cfg.Agent.Temperature)
 		srv.SetConfig("memory_backend", cfg.Memory.Backend)
+		srv.SetConfig("wechat_enabled", cfg.Auth.EnableWechatLogin)
 		srv.SetMemoryBackend(memImpl)
 
 		// 初始化认证服务
@@ -643,6 +644,7 @@ var daemonCmd = &cobra.Command{
 		srv.SetConfig("model", modelToUse)
 		srv.SetConfig("temperature", cfg.Agent.Temperature)
 		srv.SetConfig("memory_backend", cfg.Memory.Backend)
+		srv.SetConfig("wechat_enabled", cfg.Auth.EnableWechatLogin)
 
 		// 初始化认证服务
 		log.Printf("开始初始化认证服务...")

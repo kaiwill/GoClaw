@@ -16,6 +16,7 @@ import AdminLogin from '../pages/AdminLogin.vue'
 import Admin from '../pages/Admin.vue'
 import LoginSuccess from '../pages/LoginSuccess.vue'
 import LoginPending from '../pages/LoginPending.vue'
+import Paired from '../pages/Paired.vue'
 
 const routes = [
   {
@@ -51,6 +52,10 @@ const routes = [
   {
     path: '/admin/login',
     component: AdminLogin
+  },
+  {
+    path: '/paired',
+    component: Paired
   }
 ]
 

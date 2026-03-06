@@ -256,6 +256,7 @@ const handleAdd = async () => {
       name: formName.value.trim() || undefined,
       schedule: formSchedule.value.trim(),
       command: formCommand.value.trim(),
+      enabled: true
     })
     jobs.value = [...jobs.value, job]
     closeForm()
