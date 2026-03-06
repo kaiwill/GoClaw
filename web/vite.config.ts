@@ -8,7 +8,7 @@ export default defineConfig({
   server: {
     port: 5173,
     host: '0.0.0.0',
-    allowedHosts: ['7xt72525ja38.vicp.fun'],
+    allowedHosts: ['9da1-240e-456-ff30-1b1d-c01e-6c46-64ba-9b04.ngrok-free.app'],
     proxy: {
       '/api': {
         target: 'http://localhost:4096',

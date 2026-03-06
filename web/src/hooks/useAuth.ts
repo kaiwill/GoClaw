@@ -1,5 +1,5 @@
 import { ref, onMounted, onUnmounted } from 'vue'
-import { getToken, setToken, clearToken, isAuthenticated as checkAuth, getUser, setUser, clearUser } from '../lib/auth'
+import { getToken, setToken, clearToken, isAuthenticated as checkAuth, getUser, clearUser } from '../lib/auth'
 import { pair as apiPair, getPublicHealth } from '../lib/api'
 
 export function useAuth() {
