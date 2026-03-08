@@ -15,7 +15,7 @@ import (
 )
 
 func escapeFTSQuery(query string) string {
-	specialChars := []string{"\"", "*", "(", ")", "-", "+", "~", "<", ">", "@", ":", "."}
+	specialChars := []string{"\"", "*", "(", ")", "-", "+", "~", "<", ">", "@", ":", ".", "/", "`"}
 	escaped := query
 	for _, char := range specialChars {
 		escaped = strings.ReplaceAll(escaped, char, " ")

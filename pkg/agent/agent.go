@@ -267,13 +267,43 @@ func (a *Agent) ProcessMessage(ctx context.Context, message string) (*types.Chat
 		log.Printf("  Tool %d: %s - %s", i+1, spec.Name, spec.Description)
 	}
 
+	// Build messages for LLM
+	messages := []types.ChatMessage{
+		{Role: types.RoleSystem, Content: prompt},
+	}
+
+	// Add recent conversation history
+	maxHistory := 10 // Limit to last 10 messages to avoid context overflow
+	historyStart := 0
+	if len(a.history) > maxHistory {
+		historyStart = len(a.history) - maxHistory
+	}
+
+	for i := historyStart; i < len(a.history); i++ {
+		histMsg := a.history[i]
+		if histMsg.Type == "chat" && histMsg.Chat != nil {
+			messages = append(messages, *histMsg.Chat)
+		} else if histMsg.Type == "tool_results" && len(histMsg.ToolResults) > 0 {
+			// Convert tool results to tool messages
+			for _, toolResult := range histMsg.ToolResults {
+				messages = append(messages, types.ChatMessage{
+					Role:    types.RoleTool,
+					Content: toolResult.Content,
+				})
+			}
+		}
+	}
+
+	// Add current user message
+	messages = append(messages, types.ChatMessage{
+		Role:    types.RoleUser,
+		Content: message,
+	})
+
 	// Call LLM
 	response, err := a.provider.Chat(ctx, &providers.ChatRequest{
-		Messages: []types.ChatMessage{
-			{Role: types.RoleSystem, Content: prompt},
-			{Role: types.RoleUser, Content: message},
-		},
-		Tools: a.toolSpecs,
+		Messages: messages,
+		Tools:    a.toolSpecs,
 	}, a.modelName, a.temperature)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call LLM: %w", err)
