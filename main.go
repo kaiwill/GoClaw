@@ -811,6 +811,15 @@ func createChannelFromConfig(name string, cfg config.ChannelConfig) channels.Cha
 		}
 		allowedUsers := parseAllowedUsers(cfg["allowed_users"])
 		return channels.NewSlackChannel(botToken, signingSecret, appToken, allowedUsers, false)
+	case "lark":
+		appID := cfg["app_id"]
+		appSecret := cfg["app_secret"]
+		if appID == "" || appSecret == "" {
+			log.Printf("Lark 通道缺少 app_id 或 app_secret")
+			return nil
+		}
+		allowedUsers := parseAllowedUsers(cfg["allowed_users"])
+		return channels.NewLarkChannel(appID, appSecret, allowedUsers)
 	default:
 		log.Printf("未知通道类型: %s", name)
 		return nil
