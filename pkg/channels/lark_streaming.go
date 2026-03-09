@@ -393,12 +393,10 @@ func (s *LarkStreamingSession) Close(ctx context.Context, finalText string) erro
 	s.sequence++
 	url := fmt.Sprintf("%s/cardkit/v1/cards/%s/settings", s.getAPIBase(), s.cardID)
 	req := map[string]interface{}{
-		"settings": map[string]interface{}{
-			"config": map[string]interface{}{
-				"streaming_mode": false,
-				"summary": map[string]string{
-					"content": truncateSummary(merged),
-				},
+		"config": map[string]interface{}{
+			"streaming_mode": false,
+			"summary": map[string]string{
+				"content": truncateSummary(merged),
 			},
 		},
 		"sequence": s.sequence,
@@ -477,7 +475,7 @@ func truncateSummary(text string, maxLen ...int) string {
 		length = maxLen[0]
 	}
 	if text == "" {
-		return ""
+		return "完成"
 	}
 	
 	// Remove <think>...</think> tags (reasoning/thinking blocks from models like MiniMax)
