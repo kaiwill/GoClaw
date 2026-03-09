@@ -12,16 +12,52 @@ import (
 )
 
 // DefaultSystemPromptBuilder is the default system prompt builder.
-type DefaultSystemPromptBuilder struct{}
+type DefaultSystemPromptBuilder struct {
+	locale string
+}
 
 // NewDefaultSystemPromptBuilder creates a new DefaultSystemPromptBuilder.
 func NewDefaultSystemPromptBuilder() *DefaultSystemPromptBuilder {
-	return &DefaultSystemPromptBuilder{}
+	return &DefaultSystemPromptBuilder{
+		locale: "en-US",
+	}
+}
+
+// WithLocale sets the locale for the prompt builder.
+func (b *DefaultSystemPromptBuilder) WithLocale(locale string) *DefaultSystemPromptBuilder {
+	b.locale = locale
+	return b
 }
 
 // Build constructs a system prompt.
 func (b *DefaultSystemPromptBuilder) Build(context, message string) string {
-	prompt := fmt.Sprintf(`You are GoClaw, an AI assistant. Follow these guidelines:
+	var prompt string
+	if b.locale == "zh-CN" || b.locale == "zh" {
+		prompt = fmt.Sprintf(`你是一个名为 GoClaw 的 AI 助手。请遵循以下准则：
+
+1. 乐于助人、诚实且无害。
+2. 使用提供的工具回答问题和完成任务。
+3. 清晰简洁地格式化响应。
+4. 如果不知道答案，请如实告知。
+5. 任务完成策略：
+   - 仔细分析用户的完整请求，包括所有部分
+   - 将多步骤任务分解为顺序操作
+   - 完成请求的所有部分后再停止
+   - 例如，如果用户说"分析股票并发送到邮箱"，你必须：
+     a) 分析股票
+     b) 查找邮箱地址（尝试使用不同关键词的 memory_recall）
+     c) 将分析发送到该邮箱
+   - 不要在只完成部分请求后停止
+6. 仔细阅读每个工具的描述，了解具体的使用说明和要求。
+7. 在完成用户请求的全部内容后立即停止。不要进行不必要的工具调用，也不要继续工作。
+
+上下文：
+%s
+
+用户消息：
+%s`, context, message)
+	} else {
+		prompt = fmt.Sprintf(`You are GoClaw, an AI assistant. Follow these guidelines:
 
 1. Be helpful, honest, and harmless.
 2. Use the provided tools to answer questions and complete tasks.
@@ -44,6 +80,7 @@ Context:
 
 User message:
 %s`, context, message)
+	}
 	return prompt
 }
 

@@ -45,6 +45,7 @@ type GatewayConfig struct {
 	StaticDir      string // Static files directory for web interface
 	RequirePairing bool   // 是否需要配对码
 	PairedTokens   []string // 已配对的 token 列表
+	Locale         string // 语言设置
 }
 
 type AuthConfig struct {
@@ -97,6 +98,7 @@ func Default() *Config {
 			Host:      "0.0.0.0",
 			Port:      8080,
 			StaticDir: defaultStaticDir,
+			Locale:    "en-US",
 		},
 		Auth: AuthConfig{
 			EnableLogin:      false, // 默认禁用登录功能
@@ -134,6 +136,7 @@ func Load(configDir string) (*Config, error) {
 	cfg.Gateway.Port = parseTomlNestedInt(content, "gateway.port", cfg.Gateway.Port)
 	cfg.Gateway.RequirePairing = parseTomlNestedString(content, "gateway.require_pairing", "false") == "true"
 	cfg.Gateway.PairedTokens = parseTomlNestedStringArray(content, "gateway.paired_tokens", cfg.Gateway.PairedTokens)
+	cfg.Gateway.Locale = parseTomlNestedString(content, "gateway.locale", "en-US")
 
 	cfg.Memory.Backend = parseTomlNestedString(content, "memory.backend", cfg.Memory.Backend)
 	cfg.Memory.Config = parseMemoryConfig(content)
@@ -199,33 +202,50 @@ func parseMemoryConfig(content string) map[string]string {
 func parseChannelsConfig(content string) map[string]ChannelConfig {
 	channels := make(map[string]ChannelConfig)
 
-	sectionRe := regexp.MustCompile(`(?m)^\[channels_config\.(\w+)\]`)
-	matches := sectionRe.FindAllStringSubmatchIndex(content, -1)
+	lines := strings.Split(content, "\n")
+	var currentChannel string
+	var currentConfig ChannelConfig
 
-	for i, match := range matches {
-		channelName := content[match[2]:match[3]]
-
-		start := match[1]
-		end := len(content)
-		if i < len(matches)-1 {
-			end = matches[i+1][0]
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
 		}
 
-		sectionContent := content[start:end]
+		// Check for section header
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			// Save previous channel config
+			if currentChannel != "" && len(currentConfig) > 0 {
+				channels[currentChannel] = currentConfig
+			}
 
-		cfg := make(ChannelConfig)
-		kvRe := regexp.MustCompile(`(?m)^(\w+)\s*=\s*(.+)$`)
-		kvMatches := kvRe.FindAllStringSubmatch(sectionContent, -1)
-
-		for _, kv := range kvMatches {
-			key := kv[1]
-			value := strings.Trim(strings.TrimSpace(kv[2]), "\"'")
-			cfg[key] = value
+			// Parse new section
+			sectionName := strings.Trim(line, "[]")
+			if strings.HasPrefix(sectionName, "channels_config.") {
+				currentChannel = strings.TrimPrefix(sectionName, "channels_config.")
+				currentConfig = make(ChannelConfig)
+			} else {
+				currentChannel = ""
+				currentConfig = nil
+			}
+			continue
 		}
 
-		if len(cfg) > 0 {
-			channels[channelName] = cfg
+		// Parse key-value pairs
+		if currentChannel != "" && currentConfig != nil {
+			kvParts := strings.SplitN(line, "=", 2)
+			if len(kvParts) == 2 {
+				key := strings.TrimSpace(kvParts[0])
+				value := strings.TrimSpace(kvParts[1])
+				value = strings.Trim(value, "\"'")
+				currentConfig[key] = value
+			}
 		}
+	}
+
+	// Save last channel config
+	if currentChannel != "" && len(currentConfig) > 0 {
+		channels[currentChannel] = currentConfig
 	}
 
 	return channels

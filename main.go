@@ -316,6 +316,8 @@ var agentCmd = &cobra.Command{
 			//tools.NewStockAnalyzerTool(skillsDir),
 		)
 
+		promptBuilder := agent.NewDefaultSystemPromptBuilder().WithLocale(cfg.Gateway.Locale)
+
 	agt, err := agent.NewAgentBuilder().
 	WithProvider(providerInstance).
 	WithModelName(model).
@@ -324,6 +326,7 @@ var agentCmd = &cobra.Command{
 			WithSkillLoader(skills.NewSkillLoader(skillsDir)).
 	WithMemory(memImpl).
 	WithAutoSave(cfg.Memory.AutoSave).
+	WithPromptBuilder(promptBuilder).
 	WithConfig(agent.AgentConfig{
 			MaxToolIterations: cfg.Agent.MaxToolIterations,
 		}).
@@ -452,6 +455,8 @@ var agentCmd = &cobra.Command{
 
 		skillsDir := cfg.GetSkillsDir()
 
+		promptBuilder := agent.NewDefaultSystemPromptBuilder().WithLocale(cfg.Gateway.Locale)
+
 		memImpl := &memoryImpl{
 			backend: memoryBackend,
 		}
@@ -463,6 +468,7 @@ var agentCmd = &cobra.Command{
 			WithTools(agentTools).
 			WithSkillLoader(skills.NewSkillLoader(skillsDir)).
 			WithAutoSave(cfg.Memory.AutoSave).
+			WithPromptBuilder(promptBuilder).
 			WithConfig(agent.AgentConfig{
 				MaxToolIterations: cfg.Agent.MaxToolIterations,
 			}).
@@ -619,6 +625,8 @@ var daemonCmd = &cobra.Command{
 		skillsDir := cfg.GetSkillsDir()
 		log.Printf("技能目录: %s", skillsDir)
 
+		promptBuilder := agent.NewDefaultSystemPromptBuilder().WithLocale(cfg.Gateway.Locale)
+
 		skillLoader := skills.NewSkillLoader(skillsDir)
 		log.Printf("技能加载器创建成功: %v", skillLoader)
 
@@ -634,6 +642,7 @@ var daemonCmd = &cobra.Command{
 			WithTools(agentTools).
 			WithSkillLoader(skillLoader).
 			WithAutoSave(cfg.Memory.AutoSave).
+			WithPromptBuilder(promptBuilder).
 			WithConfig(agent.AgentConfig{
 				MaxToolIterations: cfg.Agent.MaxToolIterations,
 			}).
@@ -737,12 +746,15 @@ var daemonCmd = &cobra.Command{
 		}
 		
 		// Start message processor with channel map for replies
-		channelWG.Add(1)
-		go func() {
-			defer channelWG.Done()
-			log.Printf("启动消息处理器")
-			processChannelMessages(ctx, agt, msgChan, channelMap)
-		}()
+	channelWG.Add(1)
+	go func() {
+		defer channelWG.Done()
+		log.Printf("启动消息处理器, channelMap size=%d", len(channelMap))
+		for chName := range channelMap {
+			log.Printf("  通道: %s", chName)
+		}
+		processChannelMessages(ctx, agt, msgChan, channelMap)
+	}()
 
 		sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
@@ -844,22 +856,44 @@ func parseAllowedUsers(s string) []string {
 
 // processChannelMessages processes incoming channel messages
 func processChannelMessages(ctx context.Context, agt *agent.Agent, msgChan <-chan types.ChannelMessage, channelMap map[string]channels.Channel) {
+	log.Printf("processChannelMessages: 开始处理消息")
 	for {
 		select {
 		case <-ctx.Done():
+			log.Printf("processChannelMessages: context cancelled")
 			return
 		case msg, ok := <-msgChan:
 			if !ok {
+				log.Printf("processChannelMessages: msgChan closed")
 				return
 			}
+			log.Printf("processChannelMessages: 收到消息, channel=%s, sender=%s", msg.Channel, msg.Sender)
 
 			log.Printf("=== 处理通道消息 ===")
 			log.Printf("  通道: %s, 发送者: %s, 回复目标: %s", msg.Channel, msg.Sender, msg.ReplyTarget)
 			log.Printf("  内容: %s", msg.Content)
 
+			// 使用流式卡片显示加载效果
+			var streamingSession *channels.LarkStreamingSession
+			if ch, ok := channelMap[msg.Channel]; ok {
+				if larkCh, ok := ch.(*channels.LarkChannel); ok {
+					log.Printf("  创建流式卡片...")
+					streamingSession = channels.NewLarkStreamingSession(larkCh.AppID(), larkCh.AppSecret(), "")
+					if err := streamingSession.Start(ctx, msg.ReplyTarget, "chat_id", msg.Content); err != nil {
+						log.Printf("  创建流式卡片失败: %v", err)
+						streamingSession = nil
+					} else {
+						log.Printf("  流式卡片已创建")
+					}
+				}
+			}
+
 			resp, err := agt.ProcessMessage(ctx, msg.Content)
 			if err != nil {
 				log.Printf("代理错误: %v", err)
+				if streamingSession != nil {
+					streamingSession.Close(ctx, "处理消息时出错")
+				}
 				continue
 			}
 
@@ -870,7 +904,22 @@ func processChannelMessages(ctx context.Context, agt *agent.Agent, msgChan <-cha
 			ch, ok := channelMap[msg.Channel]
 			if !ok {
 				log.Printf("未找到通道 %s", msg.Channel)
+				if streamingSession != nil {
+					streamingSession.Close(ctx, "")
+				}
 				continue
+			}
+
+			// 更新流式卡片
+			if streamingSession != nil {
+				log.Printf("  更新流式卡片内容...")
+				if err := streamingSession.Update(ctx, responseText); err != nil {
+					log.Printf("  更新流式卡片失败: %v", err)
+				}
+				log.Printf("  关闭流式卡片...")
+				if err := streamingSession.Close(ctx, responseText); err != nil {
+					log.Printf("  关闭流式卡片失败: %v", err)
+				}
 			}
 
 			replyMsg := types.NewSendMessage(responseText, msg.ReplyTarget)

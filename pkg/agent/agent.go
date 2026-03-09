@@ -263,9 +263,9 @@ func (a *Agent) ProcessMessage(ctx context.Context, message string) (*types.Chat
 	prompt := a.promptBuilder.Build(contextStr, message)
 
 	log.Printf("Available tools: %d", len(a.toolSpecs))
-	for i, spec := range a.toolSpecs {
-		log.Printf("  Tool %d: %s - %s", i+1, spec.Name, spec.Description)
-	}
+	//for i, spec := range a.toolSpecs {
+	//	log.Printf("  Tool %d: %s - %s", i+1, spec.Name, spec.Description)
+	//}
 
 	// Build messages for LLM
 	messages := []types.ChatMessage{
