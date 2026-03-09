@@ -721,13 +721,17 @@ var daemonCmd = &cobra.Command{
 		
 		// Start configured channels
 		startedChannels := 0
+		log.Printf("cfg.Channels 总共 %d 个通道", len(cfg.Channels))
 		for channelName, channelCfg := range cfg.Channels {
+			log.Printf("正在创建通道: %s, cfg=%+v", channelName, channelCfg)
 			ch := createChannelFromConfig(channelName, channelCfg)
 			if ch == nil {
+				log.Printf("通道 %s 创建失败，跳过", channelName)
 				continue
 			}
 			
 			channelMap[channelName] = ch
+			log.Printf("通道 %s 创建成功", channelName)
 			
 			channelWG.Add(1)
 			go func(name string, c channels.Channel) {
@@ -786,6 +790,14 @@ var daemonCmd = &cobra.Command{
 
 // createChannelFromConfig creates a channel instance from config
 func createChannelFromConfig(name string, cfg config.ChannelConfig) channels.Channel {
+	log.Printf("createChannelFromConfig: name=%s, cfg=%+v", name, cfg)
+	
+	// Check if channel is disabled
+	if enable, exists := cfg["enable"]; exists && enable == "false" {
+		log.Printf("通道 %s 已禁用", name)
+		return nil
+	}
+	
 	switch name {
 	case "dingtalk":
 		clientID := cfg["client_id"]
@@ -832,6 +844,14 @@ func createChannelFromConfig(name string, cfg config.ChannelConfig) channels.Cha
 		}
 		allowedUsers := parseAllowedUsers(cfg["allowed_users"])
 		return channels.NewLarkChannel(appID, appSecret, allowedUsers)
+	case "wecom":
+		botID := cfg["bot_id"]
+		botSecret := cfg["bot_secret"]
+		if botID == "" || botSecret == "" {
+			log.Printf("WeCom 通道缺少 bot_id 或 bot_secret")
+			return nil
+		}
+		return channels.NewWecomChannel(botID, botSecret)
 	default:
 		log.Printf("未知通道类型: %s", name)
 		return nil

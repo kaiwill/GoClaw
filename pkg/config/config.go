@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -217,13 +218,24 @@ func parseChannelsConfig(content string) map[string]ChannelConfig {
 			// Save previous channel config
 			if currentChannel != "" && len(currentConfig) > 0 {
 				channels[currentChannel] = currentConfig
+				log.Printf("Config: Parsed channel config for %s", currentChannel)
 			}
 
 			// Parse new section
 			sectionName := strings.Trim(line, "[]")
 			if strings.HasPrefix(sectionName, "channels_config.") {
-				currentChannel = strings.TrimPrefix(sectionName, "channels_config.")
-				currentConfig = make(ChannelConfig)
+				// Check if it's a specific channel config (channels_config.xxx) or general config (channels_config)
+				if sectionName == "channels_config" {
+					// Skip general channels_config section
+					log.Printf("Config: Skipping general channels_config section")
+					currentChannel = ""
+					currentConfig = nil
+				} else {
+					// Parse specific channel config
+					currentChannel = strings.TrimPrefix(sectionName, "channels_config.")
+					currentConfig = make(ChannelConfig)
+					log.Printf("Config: Starting to parse channel config for %s", currentChannel)
+				}
 			} else {
 				currentChannel = ""
 				currentConfig = nil
@@ -239,6 +251,7 @@ func parseChannelsConfig(content string) map[string]ChannelConfig {
 				value := strings.TrimSpace(kvParts[1])
 				value = strings.Trim(value, "\"'")
 				currentConfig[key] = value
+				log.Printf("Config: %s.%s = %s", currentChannel, key, value)
 			}
 		}
 	}
@@ -246,6 +259,12 @@ func parseChannelsConfig(content string) map[string]ChannelConfig {
 	// Save last channel config
 	if currentChannel != "" && len(currentConfig) > 0 {
 		channels[currentChannel] = currentConfig
+		log.Printf("Config: Parsed channel config for %s", currentChannel)
+	}
+
+	log.Printf("Config: Total channels parsed: %d", len(channels))
+	for name := range channels {
+		log.Printf("Config: Channel %s", name)
 	}
 
 	return channels
