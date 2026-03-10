@@ -3,7 +3,7 @@ module github.com/zeroclaw-labs/goclaw
 go 1.24
 
 require (
-	github.com/gorilla/websocket v1.5.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/crypto v0.16.0

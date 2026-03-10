@@ -252,6 +252,44 @@ client_secret = "your-client-secret"
 allowed_users = ["*"]
 ```
 
+#### [channels_config.wecom] - 企业微信渠道
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `enable` | bool | false | 是否启用企业微信渠道 |
+| `bot_id` | string | - | 企业微信机器人 ID |
+| `bot_secret` | string | - | 企业微信机器人 Secret |
+| `allowed_users` | array | [] | 允许的用户列表（["*"] 表示所有用户） |
+
+**示例：**
+```toml
+[channels_config.wecom]
+enable = true
+bot_id = "aibjVtI1HRyG-LDINkpFYDvXuIccnTzp7Ig"
+bot_secret = "WFhq0icnlrRfav1XaGEOIKOjvqtyU3MLs37CLwjCp5q"
+allowed_users = ["*"]
+```
+
+**功能特性：**
+- ✅ WebSocket 长连接，实时接收消息
+- ✅ 支持单聊和群聊
+- ✅ 流式回复，打字效果
+- ✅ 自动去除消息前的 @机器人标记
+- ✅ 支持文本、图片、语音、文件等多种消息类型
+
+**获取机器人凭证：**
+1. 登录企业微信管理后台：https://work.weixin.qq.com/
+2. 进入「应用管理」→「应用」→「智能机器人」
+3. 创建或选择机器人应用
+4. 在应用详情页获取 `bot_id` 和 `bot_secret`
+5. 将机器人添加到群聊中（群聊需要 @机器人才能触发）
+
+**注意事项：**
+- 企业微信机器人需要通过 WebSocket 长连接接收消息
+- 群聊中需要 @机器人才能触发消息推送
+- 机器人头像需要在企业微信管理后台设置，代码无法控制
+- 消息回复使用流式接口，模拟打字效果（每 10 个字符延迟 100 毫秒）
+
 ### [scheduler] - 调度器配置
 
 任务调度器配置。
