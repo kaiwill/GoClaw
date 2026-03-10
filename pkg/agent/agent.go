@@ -15,6 +15,14 @@ import (
 	"github.com/zeroclaw-labs/goclaw/pkg/types"
 )
 
+// truncateString 截断字符串到指定长度
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
 // Agent represents an AI agent with core functionality.
 type Agent struct {
 	provider             providers.Provider
@@ -367,6 +375,10 @@ func (a *Agent) ProcessMessage(ctx context.Context, message string) (*types.Chat
 
 			// Add tool results to history
 			for _, result := range toolResults {
+				if result.ToolCallID == "" {
+					log.Printf("WARNING: Skipping tool result with empty ToolCallID!")
+					continue
+				}
 				a.history = append(a.history, types.ConversationMessage{
 					Type: "tool_results",
 					ToolResults: []types.ToolResultMessage{
@@ -426,16 +438,17 @@ func (a *Agent) ProcessMessage(ctx context.Context, message string) (*types.Chat
 			// Add tool results as tool messages (OpenAI format)
 			for _, result := range toolResults {
 				if result.ToolCallID == "" {
-					log.Printf("WARNING: Tool result has empty ToolCallID, skipping!")
+					log.Printf("ERROR: Cannot send tool result with empty ToolCallID to OpenAI API!")
+					log.Printf("  Tool result details: Success=%v, Error=%v, Output=%s", 
+						result.Success, result.Error, truncateString(result.Output, 100))
 					continue
 				}
-				log.Printf("Adding tool result with ID: %s, content: %s", result.ToolCallID, result.Output)
+				log.Printf("Adding tool result with ID: %s, success: %v", result.ToolCallID, result.Success)
 				toolResultData := map[string]interface{}{
 					"tool_call_id": result.ToolCallID,
 					"content":      result.Output,
 				}
 				toolResultJSON, _ := json.Marshal(toolResultData)
-				log.Printf("Tool result JSON: %s", string(toolResultJSON))
 				messages = append(messages, types.ChatMessage{
 					Role:    types.RoleTool,
 					Content: string(toolResultJSON),

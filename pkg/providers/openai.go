@@ -439,6 +439,14 @@ func (p *OpenAIProvider) convertMessages(messages []types.ChatMessage) []OpenAIM
 	return result
 }
 
+// truncateString 截断字符串到指定长度
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
 func (p *OpenAIProvider) convertMessage(msg types.ChatMessage) OpenAIMessage {
 	if msg.Role == "assistant" {
 		log.Printf("Converting assistant message, content: %s", msg.Content)
@@ -497,26 +505,51 @@ func (p *OpenAIProvider) convertMessage(msg types.ChatMessage) OpenAIMessage {
 	}
 
 	if msg.Role == "tool" {
-		log.Printf("Processing tool message, content: %s", msg.Content)
-		if data, err := json.Marshal(msg.Content); err == nil {
-			var toolData map[string]interface{}
-			if json.Unmarshal(data, &toolData); toolData != nil {
-				var toolCallID, content string
-				if tcID, ok := toolData["tool_call_id"].(string); ok {
-					toolCallID = tcID
-					log.Printf("Found tool_call_id: %s", toolCallID)
-				} else {
-					log.Printf("WARNING: tool_call_id not found in message content!")
-				}
-				if c, ok := toolData["content"].(string); ok {
-					content = c
-				}
-				return OpenAIMessage{
-					Role:       "tool",
-					Content:    &content,
-					ToolCallID: &toolCallID,
+		log.Printf("Processing tool message, content length: %d", len(msg.Content))
+		// 直接解析消息内容 JSON
+		var toolData map[string]interface{}
+		if err := json.Unmarshal([]byte(msg.Content), &toolData); err == nil {
+			var toolCallID, content string
+			if tcID, ok := toolData["tool_call_id"].(string); ok {
+				toolCallID = tcID
+				log.Printf("Found tool_call_id: '%s'", toolCallID)
+			} else {
+				log.Printf("ERROR: tool_call_id not found in message content! Content: %s", truncateString(msg.Content, 200))
+				// 尝试从原始消息中提取
+				if len(msg.Content) > 0 {
+					// 从消息内容中提取 tool_call_id
+					var tempToolData map[string]interface{}
+					if err := json.Unmarshal([]byte(msg.Content), &tempToolData); err == nil {
+						if tcID, ok := tempToolData["tool_call_id"].(string); ok {
+							toolCallID = tcID
+							log.Printf("Successfully extracted tool_call_id from content: '%s'", toolCallID)
+						}
+					}
 				}
 			}
+			
+			if c, ok := toolData["content"].(string); ok {
+				content = c
+			}
+			
+			// 确保 toolCallID 不为空
+			if toolCallID == "" {
+				log.Printf("ERROR: Cannot create OpenAIMessage with empty tool_call_id! Message content: %s", truncateString(msg.Content, 200))
+				// 返回一个没有 tool_call_id 的消息，让上游处理
+				return OpenAIMessage{
+					Role:    "tool",
+					Content: &content,
+				}
+			}
+			
+			log.Printf("Creating OpenAIMessage with tool_call_id: '%s'", toolCallID)
+			return OpenAIMessage{
+				Role:       "tool",
+				Content:    &content,
+				ToolCallID: &toolCallID,
+			}
+		} else {
+			log.Printf("ERROR: Failed to parse tool message content as JSON: %v", err)
 		}
 	}
 

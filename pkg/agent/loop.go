@@ -132,6 +132,7 @@ func (a *Agent) executeTool(ctx context.Context, call types.ToolCall) (ToolExecu
 	}
 
 	if tool == nil {
+		log.Printf("Tool not found: %s, but will include ToolCallID: %s", call.Name, call.ID)
 		return ToolExecutionResult{
 			ToolCallID: call.ID,
 			Output:     fmt.Sprintf("Unknown tool: %s", call.Name),
@@ -145,6 +146,7 @@ func (a *Agent) executeTool(ctx context.Context, call types.ToolCall) (ToolExecu
 	json.Unmarshal(call.Arguments, &args)
 	result, err := tool.Execute(ctx, args)
 	if err != nil {
+		log.Printf("Error executing tool %s: %v, but will include ToolCallID: %s", call.Name, err, call.ID)
 		return ToolExecutionResult{
 			ToolCallID: call.ID,
 			Output:     fmt.Sprintf("Error executing %s: %v", call.Name, err),
@@ -156,12 +158,16 @@ func (a *Agent) executeTool(ctx context.Context, call types.ToolCall) (ToolExecu
 	// Scrub credentials from output
 	output := scrubCredentials(result.Output)
 
-	return ToolExecutionResult{
+	// Ensure ToolCallID is set (should be call.ID)
+	toolResult := ToolExecutionResult{
 		ToolCallID: call.ID,
 		Output:     output,
 		Success:    result.Success,
 		Error:      result.Error,
-	}, nil
+	}
+
+	log.Printf("Tool execution completed successfully: %s, ToolCallID: %s", call.Name, call.ID)
+	return toolResult, nil
 }
 
 // trimHistory trims the conversation history to prevent unbounded growth.
