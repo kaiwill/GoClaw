@@ -1,28 +1,132 @@
 {
   "name": "stock-analyzer",
-  "description": "全球股票综合分析工具。支持A股、港股、美股等东方财富覆盖的所有市场。根据用户输入的股票名称或代码，从东方财富网获取股票信息，进行基本面、新闻面、资金面三维分析，给出投资建议、买入价位和卖出价位。",
-  "version": "1.0.0",
+  "description": "全球股票综合分析工具。支持A股、港股、美股、加密货币分析。A股/港股使用东方财富数据源，美股/加密货币使用Yahoo Finance进行8维度深度分析。支持投资组合管理功能。新增技术指标计算功能，可对股票数据进行多维度分析。",
+  "version": "2.1.0",
   "author": "GoClaw Team",
   "commands": [
     {
       "name": "analyze",
-      "description": "分析指定股票，生成投资分析报告",
-      "aliases": ["分析股票", "股票推荐", "股票买卖点", "股票研究"],
+      "description": "分析指定股票，自动识别市场类型并生成投资分析报告",
+      "aliases": ["分析股票", "股票推荐", "股票买卖点", "股票研究", "股票分析"],
       "kind": "shell",
       "command": "./analyze.sh --stock {{stock}} --market {{market}}",
       "parameters": [
         {
           "name": "stock",
           "type": "string",
-          "description": "股票名称或代码（如：贵州茅台、600519、00700、AAPL、MU）",
+          "description": "股票名称或代码（A股：贵州茅台/600519，港股：腾讯控股/00700，美股：AAPL/TSLA，加密货币：BTC-USD/ETH-USD）",
           "required": true
         },
         {
           "name": "market",
           "type": "string",
-          "description": "市场类型（可选值：sh-沪市、sz-深市、hk-港股、us-美股、auto-自动识别，默认为auto）",
+          "description": "市场类型（可选值：sh-沪市、sz-深市、bj-北交所、hk-港股、us-美股、auto-自动识别，默认为auto）",
           "required": false
-          
+        }
+      ]
+    },
+    {
+      "name": "analyze-us",
+      "description": "美股/加密货币深度分析，8维度评估（收益惊喜、基本面、分析师情绪、历史模式、市场环境、行业表现、动量、情绪分析）",
+      "aliases": ["美股分析", "分析美股", "crypto", "加密货币分析"],
+      "kind": "shell",
+      "command": "./analyze.sh --stock {{ticker}} --market us",
+      "parameters": [
+        {
+          "name": "ticker",
+          "type": "string",
+          "description": "美股代码（如：AAPL, TSLA, NVDA）或加密货币代码（如：BTC-USD, ETH-USD）",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "analyze-cn",
+      "description": "A股/港股分析，使用东方财富数据源，基本面+资金面分析",
+      "aliases": ["A股分析", "分析A股", "港股分析", "分析港股"],
+      "kind": "shell",
+      "command": "./analyze.sh --stock {{stock}} --market {{market}}",
+      "parameters": [
+        {
+          "name": "stock",
+          "type": "string",
+          "description": "A股/港股代码或名称（如：600519, 贵州茅台, 00700, 腾讯控股）",
+          "required": true
+        },
+        {
+          "name": "market",
+          "type": "string",
+          "description": "市场类型（sh-沪市、sz-深市、bj-北交所、hk-港股，默认自动识别）",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "portfolio",
+      "description": "投资组合管理，支持创建组合、添加/删除资产、查看持仓",
+      "aliases": ["投资组合", "组合管理", "持仓管理"],
+      "kind": "shell",
+      "command": "./analyze.sh portfolio {{action}}",
+      "parameters": [
+        {
+          "name": "action",
+          "type": "string",
+          "description": "操作类型（create-创建组合、list-列出组合、show-显示持仓、delete-删除组合、add-添加资产、update-更新资产、remove-移除资产）",
+          "required": true
+        },
+        {
+          "name": "ticker",
+          "type": "string",
+          "description": "股票代码（add/update/remove时需要）",
+          "required": false
+        },
+        {
+          "name": "quantity",
+          "type": "number",
+          "description": "数量（add时需要）",
+          "required": false
+        },
+        {
+          "name": "cost",
+          "type": "number",
+          "description": "成本价（add时需要）",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "calculate-indicators",
+      "description": "计算股票技术指标，包括移动平均线、MACD、RSI、布林带等",
+      "aliases": ["技术指标", "计算指标", "指标计算"],
+      "kind": "shell",
+      "command": "cd scripts && python calculate_indicators.py --data_file {{data_file}}",
+      "parameters": [
+        {
+          "name": "data_file",
+          "type": "string",
+          "description": "包含股票历史数据的JSON文件路径",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "fetch-stock-data",
+      "description": "获取股票实时行情和历史K线数据",
+      "aliases": ["获取数据", "股票数据", "行情数据"],
+      "kind": "shell",
+      "command": "cd scripts && python fetch_stock_data.py --symbol {{symbol}} --days {{days}}",
+      "parameters": [
+        {
+          "name": "symbol",
+          "type": "string",
+          "description": "股票代码（如：000001, 600519）",
+          "required": true
+        },
+        {
+          "name": "days",
+          "type": "number",
+          "description": "获取历史数据天数（默认30天）",
+          "required": false
         }
       ]
     }
@@ -35,10 +139,27 @@
       "分析",
       "A股",
       "港股",
-      "美股"
+      "美股",
+      "加密货币",
+      "投资组合",
+      "8维度分析",
+      "技术指标",
+      "K线数据"
     ],
-    "requires_login": true,
-    "login_url": "https://www.eastmoney.com/default.html",
-    "login_hint": "建议登录东方财富网以获取完整数据"
+    "data_sources": {
+      "cn": "东方财富",
+      "hk": "东方财富",
+      "us": "Yahoo Finance",
+      "crypto": "Yahoo Finance"
+    },
+    "features": {
+      "cn_analysis": "A股/港股基本面+资金面分析",
+      "us_analysis": "美股8维度深度分析",
+      "crypto_analysis": "加密货币3维度分析",
+      "portfolio": "投资组合管理",
+      "periodic_reports": "定期收益报告",
+      "technical_analysis": "技术指标计算（MA、MACD、RSI、布林带等）",
+      "data_fetching": "股票数据获取（实时行情、历史K线）"
+    }
   }
 }

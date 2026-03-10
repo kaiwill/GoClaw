@@ -264,7 +264,7 @@ func (c *WecomChannel) sendStreamReply(reqID, streamID, content string, finish b
 		Body: body,
 	}
 	
-	log.Printf("WeCom: Sending stream reply, reqID=%s, streamID=%s, finish=%v", reqID, streamID, finish)
+	//log.Printf("WeCom: Sending stream reply, reqID=%s, streamID=%s, finish=%v", reqID, streamID, finish)
 	
 	return wsClient.SendFrame(frame)
 }

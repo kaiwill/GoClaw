@@ -17,8 +17,10 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/zeroclaw-labs/goclaw/pkg/agent"
 	"github.com/zeroclaw-labs/goclaw/pkg/auth"
+	"github.com/zeroclaw-labs/goclaw/pkg/cron"
 	"github.com/zeroclaw-labs/goclaw/pkg/integrations"
 	"github.com/zeroclaw-labs/goclaw/pkg/memory"
+	"github.com/zeroclaw-labs/goclaw/pkg/session"
 	"github.com/zeroclaw-labs/goclaw/pkg/tools"
 	"github.com/zeroclaw-labs/goclaw/pkg/types"
 )
@@ -39,6 +41,8 @@ type Server struct {
 	authService    *auth.AuthService
 	userManager    *auth.UserManager
 	pairingGuard   PairingGuard
+	scheduler      *cron.Scheduler
+	sessionManager *session.Manager
 }
 
 // PairingGuard 配对码守卫接口
@@ -101,6 +105,10 @@ func (s *Server) SetUserManager(userManager *auth.UserManager) {
 	s.userManager = userManager
 }
 
+func (s *Server) SetScheduler(scheduler *cron.Scheduler) {
+	s.scheduler = scheduler
+}
+
 func (s *Server) SetPairingGuard(guard PairingGuard) {
 	s.pairingGuard = guard
 }
@@ -114,6 +122,10 @@ func (s *Server) SetConfig(key string, value interface{}) {
 
 func (s *Server) SetMemoryBackend(backend interface{}) {
 	s.memoryBackend = backend
+}
+
+func (s *Server) SetSessionManager(manager *session.Manager) {
+	s.sessionManager = manager
 }
 
 func (s *Server) Start(ctx context.Context) error {
@@ -141,6 +153,10 @@ func (s *Server) Start(ctx context.Context) error {
 	// User routes
 	mux.HandleFunc("/api/auth/user/info", s.handleUserInfo)
 	mux.HandleFunc("/api/auth/user/update", s.handleUserUpdate)
+	
+	// Session management routes
+	mux.HandleFunc("/api/sessions", s.handleSessions)
+	mux.HandleFunc("/api/sessions/", s.handleSessionDetail)
 	
 	// WebSocket route for agent chat
 	mux.HandleFunc("/api/ws/chat", s.handleWebSocket)
@@ -742,6 +758,109 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
+	// Handle cron-related paths
+	if strings.HasPrefix(path, "cron") {
+		// Remove "cron" prefix and split the rest
+		restPath := strings.TrimPrefix(path, "cron")
+		jobID := ""
+		if restPath != "" {
+			restPath = strings.TrimPrefix(restPath, "/")
+			if restPath != "" {
+				jobID = restPath
+			}
+		}
+		
+		if r.Method == http.MethodGet && jobID == "" {
+			// Return all cron jobs
+			if s.scheduler == nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"error": "scheduler not available"})
+				return
+			}
+			
+			jobs := s.scheduler.ListJobs()
+			response := map[string]interface{}{
+				"jobs": jobs,
+			}
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+		
+		if r.Method == http.MethodPost && jobID == "" {
+			// Add a new cron job
+			if s.scheduler == nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"error": "scheduler not available"})
+				return
+			}
+			
+			var req struct {
+				Name       string `json:"name,omitempty"`
+				Expression string `json:"expression"`
+				Command    string `json:"command"`
+				Enabled    bool   `json:"enabled"`
+			}
+			
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			
+			if req.Expression == "" || req.Command == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "expression and command are required"})
+				return
+			}
+			
+			job := &cron.Job{
+				Name:       req.Name,
+				Expression: req.Expression,
+				Command:    req.Command,
+				Enabled:    req.Enabled,
+			}
+			
+			if err := s.scheduler.AddJob(job); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			
+			response := map[string]interface{}{
+				"status": "ok",
+				"job":    job,
+			}
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+		
+		if r.Method == http.MethodDelete && jobID != "" {
+			// Delete a cron job
+			if s.scheduler == nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"error": "scheduler not available"})
+				return
+			}
+			
+			if err := s.scheduler.RemoveJob(jobID); err != nil {
+				w.WriteHeader(http.StatusNotFound)
+				json.NewEncoder(w).Encode(map[string]string{"error": "job not found"})
+				return
+			}
+			
+			response := map[string]interface{}{
+				"status":  "success",
+				"deleted": true,
+			}
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+		
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid cron request"})
+		return
+	}
+	
 	switch path {
 	case "status":
 		// Return system status matching ZeroClaw format
@@ -894,18 +1013,6 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 			"tools": toolsList,
 		}
 		json.NewEncoder(w).Encode(response)
-		return
-		
-	case "cron":
-		if r.Method == http.MethodGet {
-			// Return cron jobs
-			response := map[string]interface{}{
-				"jobs": []map[string]interface{}{},
-			}
-			json.NewEncoder(w).Encode(response)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 		return
 		
 	case "integrations":
@@ -1381,6 +1488,13 @@ func (s *Server) handleAgentChat(conn *websocket.Conn, sessionID, content string
 
 	log.Printf("Processing chat message: %s", content)
 
+	// Save user message to session if session manager is available
+	if s.sessionManager != nil {
+		if err := s.sessionManager.AddMessage(ctx, sessionID, "user", content, nil); err != nil {
+			log.Printf("Failed to save user message: %v", err)
+		}
+	}
+
 	response, err := s.agent.ProcessMessage(ctx, content)
 	if err != nil {
 		log.Printf("Agent error: %v", err)
@@ -1393,6 +1507,14 @@ func (s *Server) handleAgentChat(conn *websocket.Conn, sessionID, content string
 			conn.WriteMessage(websocket.TextMessage, data)
 		}
 		return
+	}
+
+	// Save assistant response to session if session manager is available
+	if s.sessionManager != nil {
+		responseContent := response.TextOrEmpty()
+		if err := s.sessionManager.AddMessage(ctx, sessionID, "assistant", responseContent, nil); err != nil {
+			log.Printf("Failed to save assistant message: %v", err)
+		}
 	}
 
 	// Send response
@@ -1931,4 +2053,224 @@ func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request) {
 			"status":   updatedUser.Status,
 		},
 	})
+}
+
+func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
+	if s.sessionManager == nil {
+		http.Error(w, "Session manager not configured", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		limit := 50
+		offset := 0
+		
+		if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+			if l, err := fmt.Sscanf(limitStr, "%d", &limit); err == nil && l == 1 {
+				if limit > 100 {
+					limit = 100
+				}
+			}
+		}
+		
+		if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+			if o, err := fmt.Sscanf(offsetStr, "%d", &offset); err == nil && o == 1 {
+				if offset < 0 {
+					offset = 0
+				}
+			}
+		}
+
+		userID := ""
+		if s.authService != nil {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
+				tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+				if token, err := s.authService.GetTokenInfo(tokenString); err == nil {
+					userID = fmt.Sprintf("%d", token.UserID)
+				}
+			}
+		}
+
+		sessions, err := s.sessionManager.ListSessions(r.Context(), userID, limit, offset)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"sessions": sessions,
+			"count":    len(sessions),
+		})
+
+	case http.MethodPost:
+		var req struct {
+			Title string `json:"title"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		userID := ""
+		if s.authService != nil {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
+				tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+				if token, err := s.authService.GetTokenInfo(tokenString); err == nil {
+					userID = fmt.Sprintf("%d", token.UserID)
+				}
+			}
+		}
+
+		newSession, err := s.sessionManager.CreateSession(r.Context(), userID, req.Title)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "success",
+			"session": newSession,
+		})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
+	if s.sessionManager == nil {
+		http.Error(w, "Session manager not configured", http.StatusInternalServerError)
+		return
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+	parts := strings.Split(path, "/")
+	sessionID := parts[0]
+
+	if sessionID == "" {
+		http.Error(w, "Session ID required", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	if len(parts) > 1 && parts[1] == "messages" {
+		s.handleSessionMessages(w, r, sessionID)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		session, err := s.sessionManager.GetSession(r.Context(), sessionID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"session": session,
+		})
+
+	case http.MethodPut:
+		var req struct {
+			Title string `json:"title"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		if err := s.sessionManager.UpdateSessionTitle(r.Context(), sessionID, req.Title); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "success",
+		})
+
+	case http.MethodDelete:
+		if err := s.sessionManager.DeleteSession(r.Context(), sessionID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "success",
+		})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleSessionMessages(w http.ResponseWriter, r *http.Request, sessionID string) {
+	switch r.Method {
+	case http.MethodGet:
+		limit := 100
+		offset := 0
+		
+		if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+			if l, err := fmt.Sscanf(limitStr, "%d", &limit); err == nil && l == 1 {
+				if limit > 500 {
+					limit = 500
+				}
+			}
+		}
+		
+		if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+			if o, err := fmt.Sscanf(offsetStr, "%d", &offset); err == nil && o == 1 {
+				if offset < 0 {
+					offset = 0
+				}
+			}
+		}
+
+		messages, err := s.sessionManager.GetMessages(r.Context(), sessionID, limit, offset)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"messages": messages,
+			"count":    len(messages),
+		})
+
+	case http.MethodPost:
+		var req struct {
+			Role     string                 `json:"role"`
+			Content  string                 `json:"content"`
+			Metadata map[string]interface{} `json:"metadata,omitempty"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		if req.Role == "" || req.Content == "" {
+			http.Error(w, "Role and content are required", http.StatusBadRequest)
+			return
+		}
+
+		if err := s.sessionManager.AddMessage(r.Context(), sessionID, req.Role, req.Content, req.Metadata); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "success",
+		})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }

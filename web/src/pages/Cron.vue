@@ -61,12 +61,7 @@
               <label class="block text-sm font-medium text-gray-300 mb-1">
                 {{ t('cron.schedule') }} <span class="text-red-400">*</span>
               </label>
-              <input
-                v-model="formSchedule"
-                type="text"
-                placeholder="e.g. 0 0 * * *"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <CronInput v-model="formSchedule" />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-1">
@@ -198,6 +193,7 @@ import {
   XCircle,
   AlertCircle,
 } from 'lucide-vue-next'
+import CronInput from '../components/CronInput.vue'
 import type { CronJob } from '../types/api'
 import { getCronJobs, addCronJob, deleteCronJob } from '../lib/api'
 import { useI18n } from '../lib/i18n'

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/zeroclaw-labs/goclaw/pkg/providers"
 	"github.com/zeroclaw-labs/goclaw/pkg/tools"
@@ -36,6 +37,9 @@ func (a *Agent) ToolCallLoop(ctx context.Context, message string) (*types.ChatRe
 	if err != nil {
 		return nil, fmt.Errorf("failed to build prompt: %w", err)
 	}
+
+	// Debug: Log system prompt length
+	log.Printf("System prompt length: %d characters", len(prompt))
 
 	// Initialize loop state
 	iterations := 0

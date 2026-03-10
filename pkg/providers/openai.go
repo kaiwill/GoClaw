@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -440,53 +441,72 @@ func (p *OpenAIProvider) convertMessages(messages []types.ChatMessage) []OpenAIM
 
 func (p *OpenAIProvider) convertMessage(msg types.ChatMessage) OpenAIMessage {
 	if msg.Role == "assistant" {
-		if data, err := json.Marshal(msg.Content); err == nil {
-			var toolCallsData map[string]interface{}
-			if json.Unmarshal(data, &toolCallsData); toolCallsData != nil {
-				if tc, ok := toolCallsData["tool_calls"]; ok {
-					if tcArr, ok := tc.([]interface{}); ok {
-						toolCalls := make([]OpenAIToolCall, 0, len(tcArr))
-						for _, tcItem := range tcArr {
-							if tcMap, ok := tcItem.(map[string]interface{}); ok {
-								id, _ := tcMap["id"].(string)
-								name, _ := tcMap["name"].(string)
-								args, _ := tcMap["arguments"].(string)
-								toolCalls = append(toolCalls, OpenAIToolCall{
-									ID:   &id,
-									Type: strPtr("function"),
-									Function: OpenAIFunctionCall{
-										Name:      name,
-										Arguments: args,
-									},
-								})
+		log.Printf("Converting assistant message, content: %s", msg.Content)
+		var toolCallsData map[string]interface{}
+		if err := json.Unmarshal([]byte(msg.Content), &toolCallsData); err == nil {
+			log.Printf("Parsed toolCallsData: %+v", toolCallsData)
+			if tc, ok := toolCallsData["tool_calls"]; ok {
+				log.Printf("Found tool_calls: %+v", tc)
+				if tcArr, ok := tc.([]interface{}); ok {
+					toolCalls := make([]OpenAIToolCall, 0, len(tcArr))
+					for _, tcItem := range tcArr {
+						if tcMap, ok := tcItem.(map[string]interface{}); ok {
+							id, _ := tcMap["id"].(string)
+							log.Printf("Tool call ID from map: '%s'", id)
+							var name, args string
+							if funcObj, ok := tcMap["function"].(map[string]interface{}); ok {
+								name, _ = funcObj["name"].(string)
+								args, _ = funcObj["arguments"].(string)
+							} else {
+								name, _ = tcMap["name"].(string)
+								args, _ = tcMap["arguments"].(string)
 							}
+							log.Printf("Creating tool call with ID: '%s', Name: '%s'", id, name)
+							toolCalls = append(toolCalls, OpenAIToolCall{
+								ID:   &id,
+								Type: strPtr("function"),
+								Function: OpenAIFunctionCall{
+									Name:      name,
+									Arguments: args,
+								},
+							})
 						}
+					}
 
-						content, _ := toolCallsData["content"].(string)
-						var reasoningContent *string
-						if rc, ok := toolCallsData["reasoning_content"].(string); ok {
-							reasoningContent = &rc
-						}
+					var content *string
+					if c, ok := toolCallsData["content"].(string); ok {
+						content = &c
+					}
+					var reasoningContent *string
+					if rc, ok := toolCallsData["reasoning_content"].(string); ok {
+						reasoningContent = &rc
+					}
 
-						return OpenAIMessage{
-							Role:             "assistant",
-							Content:          &content,
-							ToolCalls:        toolCalls,
-							ReasoningContent: reasoningContent,
-						}
+					log.Printf("Returning assistant message with %d tool calls", len(toolCalls))
+					return OpenAIMessage{
+						Role:             "assistant",
+						Content:          content,
+						ToolCalls:        toolCalls,
+						ReasoningContent: reasoningContent,
 					}
 				}
 			}
+		} else {
+			log.Printf("Failed to parse assistant message content: %v", err)
 		}
 	}
 
 	if msg.Role == "tool" {
+		log.Printf("Processing tool message, content: %s", msg.Content)
 		if data, err := json.Marshal(msg.Content); err == nil {
 			var toolData map[string]interface{}
 			if json.Unmarshal(data, &toolData); toolData != nil {
 				var toolCallID, content string
 				if tcID, ok := toolData["tool_call_id"].(string); ok {
 					toolCallID = tcID
+					log.Printf("Found tool_call_id: %s", toolCallID)
+				} else {
+					log.Printf("WARNING: tool_call_id not found in message content!")
 				}
 				if c, ok := toolData["content"].(string); ok {
 					content = c

@@ -19,11 +19,13 @@ import (
 	"github.com/zeroclaw-labs/goclaw/pkg/auth"
 	"github.com/zeroclaw-labs/goclaw/pkg/channels"
 	"github.com/zeroclaw-labs/goclaw/pkg/config"
+	"github.com/zeroclaw-labs/goclaw/pkg/cron"
 	"github.com/zeroclaw-labs/goclaw/pkg/gateway"
 	"github.com/zeroclaw-labs/goclaw/pkg/memory"
 	"github.com/zeroclaw-labs/goclaw/pkg/onboard"
 	"github.com/zeroclaw-labs/goclaw/pkg/providers"
 	"github.com/zeroclaw-labs/goclaw/pkg/security"
+	"github.com/zeroclaw-labs/goclaw/pkg/session"
 	"github.com/zeroclaw-labs/goclaw/pkg/skills"
 	"github.com/zeroclaw-labs/goclaw/pkg/tools"
 	"github.com/zeroclaw-labs/goclaw/pkg/types"
@@ -398,6 +400,12 @@ var agentCmd = &cobra.Command{
 			return fmt.Errorf("加载配置失败: %w", err)
 		}
 
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			log.Printf("获取用户主目录失败: %v", err)
+			homeDir = "."
+		}
+
 		// Use config provider if not specified via flag
 		providerToUse := provider
 		if providerToUse == "openai" && cfg.Provider.Name != "" {
@@ -477,7 +485,18 @@ var agentCmd = &cobra.Command{
 			return fmt.Errorf("创建代理失败: %w", err)
 		}
 
+		workspaceDir := filepath.Join(homeDir, ".goclaw", "workspace")
+		log.Printf("工作目录: %s", workspaceDir)
 
+		if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+			log.Printf("创建工作目录失败: %v", err)
+		}
+
+		scheduler := cron.GetScheduler(workspaceDir)
+		if err := scheduler.Start(); err != nil {
+			return fmt.Errorf("启动 cron scheduler 失败: %w", err)
+		}
+		defer scheduler.Stop()
 
 		// Create server address
 		addr := ":" + daemonPort
@@ -494,6 +513,25 @@ var agentCmd = &cobra.Command{
 		srv.SetConfig("require_pairing", cfg.Gateway.RequirePairing)
 		srv.SetConfig("paired_tokens", cfg.Gateway.PairedTokens)
 		srv.SetMemoryBackend(memImpl)
+		srv.SetScheduler(scheduler)
+
+		// 初始化会话管理器
+		homeDir, err = os.UserHomeDir()
+		if err != nil {
+			log.Printf("获取用户主目录失败: %v", err)
+		} else {
+			sessionsDBPath := filepath.Join(homeDir, ".goclaw", "sessions.db")
+			log.Printf("会话数据库路径: %s", sessionsDBPath)
+			sessionManager, err := session.NewManager(sessionsDBPath)
+			if err != nil {
+				log.Printf("创建会话管理器失败: %v", err)
+			} else {
+				log.Printf("会话管理器创建成功")
+				srv.SetSessionManager(sessionManager)
+				log.Printf("会话管理器设置完成")
+				defer sessionManager.Close()
+			}
+		}
 
 		// 创建配对守卫
 		if cfg.Gateway.RequirePairing {
@@ -505,7 +543,7 @@ var agentCmd = &cobra.Command{
 
 		// 初始化认证服务
 		log.Printf("开始初始化认证服务...")
-		homeDir, err := os.UserHomeDir()
+		homeDir, err = os.UserHomeDir()
 		if err != nil {
 			log.Printf("获取用户主目录失败: %v", err)
 		} else {
@@ -653,6 +691,26 @@ var daemonCmd = &cobra.Command{
 		}
 		log.Printf("代理构建成功")
 
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			log.Printf("获取用户主目录失败: %v", err)
+			homeDir = "."
+		}
+		workspaceDir := filepath.Join(homeDir, ".goclaw", "workspace")
+		log.Printf("工作目录: %s", workspaceDir)
+
+		if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+			log.Printf("创建工作目录失败: %v", err)
+		}
+
+		scheduler := cron.GetScheduler(workspaceDir)
+		if err := scheduler.Start(); err != nil {
+			log.Printf("启动 cron scheduler 失败: %v", err)
+		} else {
+			log.Printf("Cron scheduler 启动成功")
+			defer scheduler.Stop()
+		}
+
 		addr := ":" + daemonPort
 		log.Printf("创建网关服务器，地址: %s", addr)
 		
@@ -667,6 +725,26 @@ var daemonCmd = &cobra.Command{
 		srv.SetConfig("wechat_enabled", cfg.Auth.EnableWechatLogin)
 		srv.SetConfig("require_pairing", cfg.Gateway.RequirePairing)
 		srv.SetConfig("paired_tokens", cfg.Gateway.PairedTokens)
+		srv.SetMemoryBackend(memImpl)
+		srv.SetScheduler(scheduler)
+
+		// 初始化会话管理器
+		homeDir, err = os.UserHomeDir()
+		if err != nil {
+			log.Printf("获取用户主目录失败: %v", err)
+		} else {
+			sessionsDBPath := filepath.Join(homeDir, ".goclaw", "sessions.db")
+			log.Printf("会话数据库路径: %s", sessionsDBPath)
+			sessionManager, err := session.NewManager(sessionsDBPath)
+			if err != nil {
+				log.Printf("创建会话管理器失败: %v", err)
+			} else {
+				log.Printf("会话管理器创建成功")
+				srv.SetSessionManager(sessionManager)
+				log.Printf("会话管理器设置完成")
+				defer sessionManager.Close()
+			}
+		}
 
 		// 创建配对守卫
 		if cfg.Gateway.RequirePairing {
@@ -678,7 +756,7 @@ var daemonCmd = &cobra.Command{
 
 		// 初始化认证服务
 		log.Printf("开始初始化认证服务...")
-		homeDir, err := os.UserHomeDir()
+		homeDir, err = os.UserHomeDir()
 		if err != nil {
 			log.Printf("获取用户主目录失败: %v", err)
 		} else {

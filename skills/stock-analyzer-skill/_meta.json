@@ -1,6 +1,21 @@
 {
   "ownerId": "goclaw-team",
   "slug": "stock-analyzer",
-  "version": "1.0.0",
-  "publishedAt": 1769912196082
+  "version": "2.1.0",
+  "publishedAt": 1741612800000,
+  "description": "全球股票综合分析工具。支持A股、港股、美股、加密货币分析。美股8维度深度分析，投资组合管理。新增技术指标计算功能，可对股票数据进行多维度分析。",
+  "features": [
+    "A股/港股分析 (东方财富)",
+    "美股8维度分析 (Yahoo Finance)",
+    "加密货币分析 (Top 20)",
+    "投资组合管理",
+    "地缘政治风险评估",
+    "突发新闻预警",
+    "技术指标计算 (MA、MACD、RSI、布林带等)",
+    "股票数据获取 (实时行情、历史K线)"
+  ],
+  "sources": {
+    "cn": "stock-analysis-main v5.0.0",
+    "original": "stock-analyzer-skill v1.0.0"
+  }
 }

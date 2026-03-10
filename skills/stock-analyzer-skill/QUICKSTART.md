@@ -1,251 +1,178 @@
-# GoClaw Stock Analyzer Skill 快速使用指南
+# Stock Analyzer Skill 快速使用指南
 
-## 📚 概述
+## 概述
 
-`stock-analyzer-skill` 已成功集成到 GoClaw 中，现在可以通过 HTTP API 使用股票分析功能。
+`stock-analyzer-skill` 是一个全球股票综合分析工具，已成功整合美股8维度分析、加密货币分析和投资组合管理功能。
 
-## 🚀 快速开始
+## 支持的市场
 
-### 1. 启动 GoClaw Daemon
+| 市场 | 代码示例 | 数据源 | 分析类型 |
+|------|---------|--------|---------|
+| A股沪市 | 600519 | 东方财富 | 基本面+资金面 |
+| A股深市 | 300750 | 东方财富 | 基本面+资金面 |
+| 北交所 | 830799 | 东方财富 | 基本面+资金面 |
+| 港股 | 00700 | 东方财富 | 基本面+资金面 |
+| 美股 | AAPL, TSLA | Yahoo Finance | 8维度深度分析 |
+| 加密货币 | BTC-USD | Yahoo Finance | 3维度分析 |
+
+## 快速开始
+
+### 1. 安装依赖
 
 ```bash
-cd /Users/haha/.zeroclaw/GoClaw
-./bin/goclaw daemon
+# A股/港股依赖
+cd /Users/haha/.goclaw/workspace/skills/stock-analyzer-skill/scripts
+pip install -r requirements.txt
+
+# 美股/加密货币依赖
+cd us
+pip install -r requirements.txt
 ```
 
-### 2. 发送股票分析请求
-
-在另一个终端执行：
+### 2. 分析A股
 
 ```bash
-# 分析 A股 - 贵州茅台
+./analyze.sh 贵州茅台
+./analyze.sh 600519 --market sh
+```
+
+### 3. 分析港股
+
+```bash
+./analyze.sh 腾讯控股
+./analyze.sh 00700 --market hk
+```
+
+### 4. 分析美股
+
+```bash
+# 单只股票
+./analyze.sh AAPL
+./analyze.sh TSLA
+
+# 多只股票对比
+./analyze.sh AAPL MSFT GOOGL
+```
+
+### 5. 分析加密货币
+
+```bash
+./analyze.sh BTC-USD
+./analyze.sh ETH-USD SOL-USD
+```
+
+### 6. 投资组合管理
+
+```bash
+# 创建组合
+./analyze.sh portfolio create "我的组合"
+
+# 添加资产
+./analyze.sh portfolio add AAPL --quantity 100 --cost 150
+./analyze.sh portfolio add BTC-USD --quantity 0.5 --cost 40000
+
+# 查看组合
+./analyze.sh portfolio show
+
+# 分析组合
+node index.js --command analyze --stock AAPL --portfolio "我的组合"
+```
+
+## 美股8维度分析说明
+
+| 维度 | 权重 | 说明 |
+|------|------|------|
+| Earnings Surprise | 30% | EPS超预期/不及预期 |
+| Fundamentals | 20% | P/E、利润率、营收增长、负债 |
+| Analyst Sentiment | 20% | 分析师评级、目标价 |
+| Historical Patterns | 10% | 过去财报反应 |
+| Market Context | 10% | VIX、SPY/QQQ趋势 |
+| Sector Performance | 15% | 行业相对表现 |
+| Momentum | 15% | RSI、52周区间、成交量 |
+| Sentiment | 10% | 恐惧贪婪指数、做空比例、内部交易 |
+
+## 风险评估功能
+
+### 地缘政治风险检测
+
+自动检测以下风险事件并调整置信度：
+- 台海局势 → 半导体股影响
+- 中美关系 → 科技/消费股影响
+- 俄乌冲突 → 能源/材料股影响
+- 中东局势 → 石油/军工股影响
+- 银行危机 → 金融股影响
+
+### 避险资产追踪
+
+当 GLD(黄金)、TLT(国债)、UUP(美元) 同时上涨时，自动触发风险规避模式。
+
+### 突发新闻预警
+
+扫描Google News RSS获取24小时内的危机关键词。
+
+## 在GoClaw中使用
+
+### 通过HTTP API
+
+```bash
+# 启动GoClaw
+./bin/goclaw daemon
+
+# 分析A股
 curl -X POST http://localhost:4096/agent \
   -H "Content-Type: application/json" \
-  -d '{"message": "帮我分析一下贵州茅台的股票"}'
+  -d '{"message": "分析贵州茅台"}'
 
-# 分析 港股 - 腾讯控股
-curl -X POST http://localhost:4096/agent \
-  -H "Content-Type: application/json" \
-  -d '{"message": "分析腾讯控股"}'
-
-# 分析 美股 - 苹果
+# 分析美股
 curl -X POST http://localhost:4096/agent \
   -H "Content-Type: application/json" \
   -d '{"message": "分析苹果AAPL"}'
 
-# 分析 美股 - 美光
+# 分析加密货币
 curl -X POST http://localhost:4096/agent \
   -H "Content-Type: application/json" \
-  -d '{"message": "分析美光MU"}'
+  -d '{"message": "分析比特币BTC-USD"}'
 ```
 
-## 🎯 支持的查询方式
-
-### 按股票名称
-```
-分析贵州茅台
-分析腾讯控股
-分析苹果AAPL
-分析美光MU
-分析特斯拉TSLA
-分析英伟达NVDA
-```
-
-### 按股票代码
-```
-分析 600519
-分析 00700
-分析 AAPL
-分析 MU
-```
-
-### 触发关键词
-以下关键词会自动触发股票分析：
-
-**通用关键词：**
-- 分析股票
-- 股票推荐
-- 股票买卖点
-- 股票研究
-
-**市场关键词：**
-- A股分析、港股分析、美股分析
-- 恒生指数、纳斯达克、标普500、道琼斯
-- 中概股
-
-**股票名称：**
-- 贵州茅台、腾讯、美团、小米、比亚迪股份
-- 苹果AAPL、特斯拉TSLA、英伟达NVDA、美光MU
-- 谷歌GOOGL、微软MSFT、亚马逊AMZN、Meta
-- 阿里巴巴BABA、拼多多PDD、京东JD
-
-## 📊 输出示例
+## 目录结构
 
 ```
-═══════════════════════════════════════════════════════════════
-  📉 贵州茅台 (600519)
-═════════════════════════════════════════════════════════════════
-
-💰 当前价格: 1440.11
-📉 涨跌额:   -14.91
-📉 涨跌幅:   -1.02%
-
-────────────────────────────────────────────────────────────────────
-
-📊 基本信息
-  今开: 1450.00
-  昨收: 1455.02
-  最高: 1457.00
-  最低: 1436.66
-  涨停: 1600.52
-  跌停: 1309.52
-
-────────────────────────────────────────────────────────────────────
-
-💼 市场数据
-  成交额: 51.15亿
-  总市值: 1.80万亿
-  流通市值: 1.80万亿
-  换手率: 0.28%
-  量比: 0.96
-
-────────────────────────────────────────────────────────────────────
-
-📈 估值指标
-  市盈率(PE): 20.93
-  市净率(PB): 7.94
-
-────────────────────────────────────────────────────────────────────
-
-💡 综合分析
-  基本面评分: 5/10
-  基本面中性
-  
-  资金面评分: 5/10
-  资金面中性
-  
-  综合评分: 10/20
-  ✅ 投资建议: 推荐买入
-
-────────────────────────────────────────────────────────────────────
-
-🎯 买卖价位建议
-  建仓价位: 1396.91
-  目标价位: 1584.12
-  止损价位: 1324.90
-
-═════════════════════════════════════════════════════════════════
-```
-
-## 🏗️ 技术架构
-
-```
-用户请求 (HTTP API)
-    ↓
-GoClaw Agent
-    ↓
-StockAnalyzerTool (Go)
-    ↓
-index.js (Node.js)
-    ↓
-fetch_stock.py (Python)
-    ↓
-东方财富 API
-    ↓
-分析报告 (JSON/Markdown)
-    ↓
-返回给用户
-```
-
-## 📁 文件结构
-
-```
-/Users/haha/.zeroclaw/workspace/skills/stock-analyzer-skill/
-├── index.js              # Node.js 入口文件
-├── package.json          # Node.js 配置
-├── skill.json            # 技能定义
-├── _meta.json            # 元数据
-├── SKILL.md              # 详细文档
-├── README.md             # 使用指南
+stock-analyzer-skill/
+├── index.js              # Node.js 统一入口
+├── analyze.sh            # Shell 入口脚本
 ├── scripts/
-│   ├── fetch_stock.py    # Python 数据抓取脚本
-│   └── requirements.txt  # Python 依赖
-├── assets/
-│   ├── report_template.html  # HTML 报告模板
-│   └── report_template.md   # Markdown 报告模板
-└── references/
-    └── eastmoney_guide.md   # 东方财富指南
+│   ├── fetch_stock.py    # A股/港股数据获取
+│   ├── requirements.txt  # A股/港股依赖
+│   └── us/
+│       ├── analyze_stock.py  # 美股/加密货币分析 (8维度)
+│       ├── portfolio.py      # 投资组合管理
+│       └── requirements.txt  # 美股依赖
+└── ...
 ```
 
-## 🔧 集成到 GoClaw
-
-已自动集成到 GoClaw 的以下位置：
-
-1. **工具定义**：`pkg/tools/stock_analyzer_tool.go`
-2. **主程序**：`cmd/main.go` (3处)
-   - daemon 模式
-   - run 模式
-   - chat 模式
-
-## ✅ 测试验证
+## 测试命令
 
 ```bash
-# 测试 A股
-cd /Users/haha/.zeroclaw/workspace/skills/stock-analyzer-skill
+# 测试A股
 node index.js --stock 600519 --market sh
 
-# 测试 港股
+# 测试港股
 node index.js --stock 00700 --market hk
 
-# 测试 美股
+# 测试美股
 node index.js --stock AAPL --market us
+
+# 测试加密货币
+node index.js --stock BTC-USD
 ```
 
-## 📝 注意事项
+## 注意事项
 
-1. **数据来源**：东方财富网，仅供参考，不构成投资建议
-2. **登录建议**：建议登录东方财富网账号以获取完整数据
-3. **请求限制**：避免短时间内频繁查询
-4. **交易时间**：仅在交易时间内能获取实时数据
-5. **网络要求**：需要稳定的网络连接
-
-## 🐛 故障排除
-
-### 问题：无法获取股票数据
-- 检查网络连接
-- 确认股票代码是否正确
-- 尝试登录东方财富网账号
-
-### 问题：Python 脚本执行失败
-```bash
-# 检查 Python 版本
-python3 --version
-
-# 安装依赖
-cd /Users/haha/.zeroclaw/workspace/skills/stock-analyzer-skill/scripts
-pip install -r requirements.txt
-```
-
-### 问题：GoClaw 构建失败
-```bash
-cd /Users/haha/.zeroclaw/GoClaw
-go mod tidy
-go build -o bin/goclaw cmd/main.go
-```
-
-## 🎓 更多信息
-
-- 详细文档：`/Users/haha/.zeroclaw/workspace/skills/stock-analyzer-skill/SKILL.md`
-- 使用指南：`/Users/haha/.zeroclaw/workspace/skills/stock-analyzer-skill/README.md`
-- 东方财富指南：`/Users/haha/.zeroclaw/workspace/skills/stock-analyzer-skill/references/eastmoney_guide.md`
-
-## 📞 支持
-
-如有问题，请检查：
-1. GoClaw 日志输出
-2. 技能日志（`[INFO]` 和 `[ERROR]` 标记）
-3. 东方财富网站是否可访问
+1. **数据延迟**: 行情数据可能有15-20分钟延迟
+2. **请求限制**: 避免短时间内频繁查询
+3. **交易时间**: 仅在交易时间内能获取实时数据
+4. **Python版本**: 需要Python 3.10+
 
 ---
 
-**享受股票分析！** 📈💰
+**免责声明**: 本工具仅供信息参考，不构成任何投资建议。股市有风险，投资需谨慎。

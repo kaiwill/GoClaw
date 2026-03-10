@@ -3,6 +3,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sync"
@@ -286,9 +287,15 @@ func (a *Agent) ProcessMessage(ctx context.Context, message string) (*types.Chat
 		} else if histMsg.Type == "tool_results" && len(histMsg.ToolResults) > 0 {
 			// Convert tool results to tool messages
 			for _, toolResult := range histMsg.ToolResults {
+				// Create tool result message with tool_call_id
+				toolResultData := map[string]interface{}{
+					"tool_call_id": toolResult.ToolCallID,
+					"content":      toolResult.Content,
+				}
+				toolResultJSON, _ := json.Marshal(toolResultData)
 				messages = append(messages, types.ChatMessage{
 					Role:    types.RoleTool,
-					Content: toolResult.Content,
+					Content: string(toolResultJSON),
 				})
 			}
 		}
@@ -382,21 +389,58 @@ func (a *Agent) ProcessMessage(ctx context.Context, message string) (*types.Chat
 			if response.Text != nil {
 				responseText = *response.Text
 			}
-			messages = append(messages, types.ChatMessage{
-				Role:    types.RoleAssistant,
-				Content: responseText,
-			})
-
-			// Add tool results as a user message (simple text format)
-			var toolResultsText string
-			for _, result := range toolResults {
-				toolResultsText += result.Output + "\n\n"
+			
+			// Build assistant message with tool_calls if present
+			if len(response.ToolCalls) > 0 {
+				log.Printf("Adding assistant message with %d tool calls", len(response.ToolCalls))
+				toolCallsData := make([]map[string]interface{}, 0, len(response.ToolCalls))
+				for _, tc := range response.ToolCalls {
+					log.Printf("Tool call ID: %s, Name: %s", tc.ID, tc.Name)
+					toolCallsData = append(toolCallsData, map[string]interface{}{
+						"id":         tc.ID,
+						"type":       "function",
+						"function": map[string]interface{}{
+							"name":      tc.Name,
+							"arguments": string(tc.Arguments),
+						},
+					})
+				}
+				combinedContent := map[string]interface{}{
+					"content":    responseText,
+					"tool_calls": toolCallsData,
+				}
+				combinedJSON, _ := json.Marshal(combinedContent)
+				log.Printf("Assistant message with tool calls: %s", string(combinedJSON))
+				messages = append(messages, types.ChatMessage{
+					Role:    types.RoleAssistant,
+					Content: string(combinedJSON),
+				})
+			} else {
+				log.Printf("Adding simple assistant message: %s", responseText)
+				messages = append(messages, types.ChatMessage{
+					Role:    types.RoleAssistant,
+					Content: responseText,
+				})
 			}
 
-			messages = append(messages, types.ChatMessage{
-				Role:    types.RoleUser,
-				Content: "Tool results:\n" + toolResultsText,
-			})
+			// Add tool results as tool messages (OpenAI format)
+			for _, result := range toolResults {
+				if result.ToolCallID == "" {
+					log.Printf("WARNING: Tool result has empty ToolCallID, skipping!")
+					continue
+				}
+				log.Printf("Adding tool result with ID: %s, content: %s", result.ToolCallID, result.Output)
+				toolResultData := map[string]interface{}{
+					"tool_call_id": result.ToolCallID,
+					"content":      result.Output,
+				}
+				toolResultJSON, _ := json.Marshal(toolResultData)
+				log.Printf("Tool result JSON: %s", string(toolResultJSON))
+				messages = append(messages, types.ChatMessage{
+					Role:    types.RoleTool,
+					Content: string(toolResultJSON),
+				})
+			}
 
 			// Call LLM again with tool results
 			response, err = a.provider.Chat(ctx, &providers.ChatRequest{

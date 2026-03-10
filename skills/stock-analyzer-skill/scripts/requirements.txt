@@ -9,3 +9,7 @@ playwright>=1.40.0
 
 # 安装后需要运行以下命令安装浏览器：
 # python -m playwright install chromium
+
+# 技术指标计算依赖
+numpy>=1.24.0
+pandas>=2.0.0

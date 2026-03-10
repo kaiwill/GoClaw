@@ -88,11 +88,18 @@ export class WebSocketClient {
     }
   }
 
-  sendMessage(content: string): void {
+  sendMessage(content: string, sessionId?: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error('WebSocket is not connected')
     }
-    this.ws.send(JSON.stringify({ type: 'message', content: content }))
+    const message: { type: string; content: string; session_id?: string } = {
+      type: 'message',
+      content: content
+    }
+    if (sessionId) {
+      message.session_id = sessionId
+    }
+    this.ws.send(JSON.stringify(message))
   }
 
   disconnect(): void {

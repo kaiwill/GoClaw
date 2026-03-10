@@ -48,8 +48,17 @@ func (b *DefaultSystemPromptBuilder) Build(context, message string) string {
      b) 查找邮箱地址（尝试使用不同关键词的 memory_recall）
      c) 将分析发送到该邮箱
    - 不要在只完成部分请求后停止
-6. 仔细阅读每个工具的描述，了解具体的使用说明和要求。
-7. 在完成用户请求的全部内容后立即停止。不要进行不必要的工具调用，也不要继续工作。
+6. 定时任务识别：
+   - 当用户提到"计划"、"定时"、"每天"、"每周"、"每月"、"定期"、"重复"等词汇时，必须使用 cron_add 工具创建定时任务
+   - cron 表达式格式：分 时 日 月 周
+   - 常用示例：
+     * "0 16 * * 1-5" = 工作日每天下午16:00
+     * "0 18 * * 5" = 每周五下午18:00
+     * "0 9 * * *" = 每天上午9:00
+     * "*/30 * * * *" = 每30分钟
+   - 如果用户需要多个定时任务，必须为每个任务分别调用 cron_add
+7. 仔细阅读每个工具的描述，了解具体的使用说明和要求。
+8. 在完成用户请求的全部内容后立即停止。不要进行不必要的工具调用，也不要继续工作。
 
 上下文：
 %s
@@ -72,8 +81,17 @@ func (b *DefaultSystemPromptBuilder) Build(context, message string) string {
      b) Find the email address (try memory_recall with different keywords)
      c) Send the analysis to that email
    - Do not stop after completing only part of the request
-6. Carefully read each tool's description for specific usage instructions and requirements.
-7. Stop immediately after completing the ENTIRE user request. Do not make unnecessary tool calls or continue working after the task is done.
+6. Scheduled task recognition:
+   - When users mention "plan", "schedule", "daily", "weekly", "monthly", "regular", "repeat", etc., you MUST use the cron_add tool to create scheduled tasks
+   - Cron expression format: minute hour day month weekday
+   - Common examples:
+     * "0 16 * * 1-5" = Every weekday at 4:00 PM
+     * "0 18 * * 5" = Every Friday at 6:00 PM
+     * "0 9 * * *" = Every day at 9:00 AM
+     * "*/30 * * * *" = Every 30 minutes
+   - If the user needs multiple scheduled tasks, you must call cron_add for each task separately
+7. Carefully read each tool's description for specific usage instructions and requirements.
+8. Stop immediately after completing the ENTIRE user request. Do not make unnecessary tool calls or continue working after the task is done.
 
 Context:
 %s
