@@ -305,6 +305,14 @@ func (s *Scheduler) scheduleAllJobs() {
 
 // executeJob executes a job
 func (s *Scheduler) executeJob(id string) {
+	log.Printf("Executing job: %s", id)
+
+	startTime := time.Now()
+	var job *Job
+	var output string
+	var err error
+
+	// Get job with lock
 	s.store.mu.Lock()
 	job, exists := s.store.jobs[id]
 	if !exists {
@@ -312,16 +320,23 @@ func (s *Scheduler) executeJob(id string) {
 		log.Printf("Job not found: %s", id)
 		return
 	}
+	log.Printf("Executing job: %s (%s)", job.ID, job.Name)
 	s.store.mu.Unlock()
 
-	log.Printf("Executing job: %s (%s)", job.ID, job.Name)
-
-	startTime := time.Now()
-	output, err := s.runCommand(job.Command)
+	// Execute command
+	output, err = s.runCommand(job.Command)
 	duration := time.Since(startTime)
 
+	// Update job with lock
 	s.store.mu.Lock()
 	defer s.store.mu.Unlock()
+
+	// Check if job still exists (could have been deleted)
+	job, exists = s.store.jobs[id]
+	if !exists {
+		log.Printf("Job not found during update: %s", id)
+		return
+	}
 
 	job.LastRun = &startTime
 	job.LastOutput = output
