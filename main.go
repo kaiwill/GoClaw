@@ -319,10 +319,10 @@ var agentCmd = &cobra.Command{
 		tools.NewScheduleTool("."),
 		tools.NewTaskPlanTool(),
 		// Cron tools
-		tools.NewCronAddTool("."),
-		tools.NewCronListTool("."),
-		tools.NewCronRemoveTool("."),
-		tools.NewCronRunTool("."),
+		tools.NewCronAddTool(".", "localhost", 4096),
+		tools.NewCronListTool(".", "localhost", 4096),
+		tools.NewCronRemoveTool(".", "localhost", 4096),
+		tools.NewCronRunTool(".", "localhost", 4096),
 		// Browser tools
 		tools.NewBrowserOpenTool(nil),
 		tools.NewBrowserTool(nil),
@@ -493,10 +493,10 @@ var agentCmd = &cobra.Command{
 			tools.NewPDFReadTool("."),
 			tools.NewScheduleTool("."),
 			tools.NewTaskPlanTool(),
-			tools.NewCronAddTool("."),
-			tools.NewCronListTool("."),
-			tools.NewCronRemoveTool("."),
-			tools.NewCronRunTool("."),
+			tools.NewCronAddTool(".", "localhost", 4096),
+			tools.NewCronListTool(".", "localhost", 4096),
+			tools.NewCronRemoveTool(".", "localhost", 4096),
+			tools.NewCronRunTool(".", "localhost", 4096),
 			tools.NewBrowserOpenTool(nil),
 			tools.NewBrowserTool(nil),
 			tools.NewModelRoutingConfigTool(),
@@ -556,7 +556,7 @@ var agentCmd = &cobra.Command{
 			log.Printf("创建工作目录失败: %v", err)
 		}
 
-		scheduler := cron.GetScheduler(workspaceDir)
+		scheduler := cron.GetScheduler(workspaceDir, "localhost", 4096)
 		if err := scheduler.Start(); err != nil {
 			return fmt.Errorf("启动 cron scheduler 失败: %w", err)
 		}
@@ -703,10 +703,10 @@ var daemonCmd = &cobra.Command{
 			tools.NewPDFReadTool("."),
 			tools.NewScheduleTool("."),
 			tools.NewTaskPlanTool(),
-			tools.NewCronAddTool("."),
-			tools.NewCronListTool("."),
-			tools.NewCronRemoveTool("."),
-			tools.NewCronRunTool("."),
+			tools.NewCronAddTool(".", "localhost", 4096),
+			tools.NewCronListTool(".", "localhost", 4096),
+			tools.NewCronRemoveTool(".", "localhost", 4096),
+			tools.NewCronRunTool(".", "localhost", 4096),
 			tools.NewBrowserOpenTool(nil),
 			tools.NewBrowserTool(nil),
 			tools.NewModelRoutingConfigTool(),
@@ -778,7 +778,7 @@ var daemonCmd = &cobra.Command{
 			log.Printf("创建工作目录失败: %v", err)
 		}
 
-		scheduler := cron.GetScheduler(workspaceDir)
+		scheduler := cron.GetScheduler(workspaceDir, "localhost", 4096)
 		if err := scheduler.Start(); err != nil {
 			log.Printf("启动 cron scheduler 失败: %v", err)
 		} else {

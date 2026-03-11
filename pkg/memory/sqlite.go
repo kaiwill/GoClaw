@@ -5,13 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
-	"strings"
 )
 
 func escapeFTSQuery(query string) string {
@@ -361,7 +362,8 @@ func (m *SQLiteMemoryBackend) searchFTS(ctx context.Context, query string, limit
 
 	rows, err := m.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
-		return nil, err
+		log.Printf("Memory FTS query error: %v, falling back to LIKE search", err)
+		return m.searchLike(ctx, query, limit, category)
 	}
 	defer rows.Close()
 
@@ -369,12 +371,55 @@ func (m *SQLiteMemoryBackend) searchFTS(ctx context.Context, query string, limit
 		var entry MemoryEntry
 		var score float64
 		if err := rows.Scan(&entry.ID, &entry.Key, &entry.Content, &entry.Category, &entry.CreatedAt, &entry.UpdatedAt, &score); err != nil {
+			log.Printf("Memory FTS scan error: %v, falling back to LIKE search", err)
+			return m.searchLike(ctx, query, limit, category)
+		}
+		entries = append(entries, entry)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Printf("Memory FTS rows error: %v, falling back to LIKE search", err)
+		return m.searchLike(ctx, query, limit, category)
+	}
+
+	return entries, nil
+}
+
+func (m *SQLiteMemoryBackend) searchLike(ctx context.Context, query string, limit int, category *string) ([]MemoryEntry, error) {
+	entries := []MemoryEntry{}
+
+	searchPattern := "%" + query + "%"
+
+	sqlQuery := `
+		SELECT id, key, content, category, created_at, updated_at
+		FROM memories
+		WHERE (key LIKE ? OR content LIKE ?)
+	`
+	args := []interface{}{searchPattern, searchPattern}
+
+	if category != nil {
+		sqlQuery += ` AND category = ?`
+		args = append(args, *category)
+	}
+
+	sqlQuery += ` LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := m.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var entry MemoryEntry
+		if err := rows.Scan(&entry.ID, &entry.Key, &entry.Content, &entry.Category, &entry.CreatedAt, &entry.UpdatedAt); err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)
 	}
 
-	return entries, nil
+	return entries, rows.Err()
 }
 
 func (m *SQLiteMemoryBackend) searchVector(ctx context.Context, query string, limit int, category *string) ([]MemoryEntry, error) {

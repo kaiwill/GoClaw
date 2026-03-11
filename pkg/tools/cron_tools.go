@@ -30,16 +30,19 @@ type CronJob struct {
 // CronAddTool creates scheduled cron jobs.
 type CronAddTool struct {
 	BaseTool
-	workspaceDir string
+	workspaceDir  string
+	gatewayHost   string
+	gatewayPort   int
 }
 
 // NewCronAddTool creates a new CronAddTool.
-func NewCronAddTool(workspaceDir string) *CronAddTool {
+func NewCronAddTool(workspaceDir string, gatewayHost string, gatewayPort int) *CronAddTool {
 	schema := json.RawMessage(`{
 		"type": "object",
 		"properties": {
 			"name": { "type": "string", "description": "任务名称，用于标识这个定时任务" },
 			"expression": { "type": "string", "description": "Cron 表达式（例如：'0 16 * * 1-5' 表示工作日每天16:00）或 'at:YYYY-MM-DDTHH:MM' 格式用于一次性任务" },
+			"type": { "type": "string", "description": "任务类型: shell(默认), python, nodejs, agent", "enum": ["shell", "python", "nodejs", "agent"] },
 			"command": { "type": "string", "description": "要执行的 Shell 命令或脚本（与 agent_task 二选一）" },
 			"agent_task": { "type": "string", "description": "要让 Agent 执行的任务描述（与 command 二选一）。例如：'分析股票爱尔眼科并发送到企业微信'" },
 			"enabled": { "type": "boolean", "description": "是否启用任务（默认：true）" }
@@ -53,6 +56,8 @@ func NewCronAddTool(workspaceDir string) *CronAddTool {
 			schema,
 		),
 		workspaceDir: workspaceDir,
+		gatewayHost:  gatewayHost,
+		gatewayPort:  gatewayPort,
 	}
 }
 
@@ -62,6 +67,7 @@ func (t *CronAddTool) Execute(ctx context.Context, args map[string]interface{}) 
 	command, _ := args["command"].(string)
 	agentTask, _ := args["agent_task"].(string)
 	name, _ := args["name"].(string)
+	taskType, _ := args["type"].(string)
 	enabled := true
 	if e, ok := args["enabled"].(bool); ok {
 		enabled = e
@@ -75,28 +81,31 @@ func (t *CronAddTool) Execute(ctx context.Context, args map[string]interface{}) 
 		}, nil
 	}
 	
-	if command == "" && agentTask == "" {
+	if command == "" && agentTask == "" && taskType == "" {
 		return &ToolResult{
 			Success: false,
 			Output:  "",
-			Error:   "必须提供 command 或 agent_task 参数",
+			Error:   "必须提供 command、agent_task 或 type 参数",
 		}, nil
 	}
 
 	var actualCommand string
-	var taskType string
+	var jobType string
 	if agentTask != "" {
-		taskType = "Agent任务"
-		actualCommand = fmt.Sprintf(`curl -s -X POST http://localhost:4096/api/chat -H "Content-Type: application/json" -d '{"message": "%s", "session_id": "cron_task"}'`, escapeJSONString(agentTask))
+		jobType = "agent"
+		actualCommand = agentTask
 		if name == "" {
 			name = agentTask
 		}
+	} else if taskType != "" {
+		jobType = taskType
+		actualCommand = command
 	} else {
-		taskType = "Shell命令"
+		jobType = "shell"
 		actualCommand = command
 	}
 
-	scheduler := cron.GetScheduler(t.workspaceDir)
+	scheduler := cron.GetScheduler(t.workspaceDir, t.gatewayHost, t.gatewayPort)
 	if !scheduler.IsRunning() {
 		if err := scheduler.Start(); err != nil {
 			return &ToolResult{
@@ -111,6 +120,7 @@ func (t *CronAddTool) Execute(ctx context.Context, args map[string]interface{}) 
 		Name:       name,
 		Expression: expression,
 		Command:    actualCommand,
+		Type:       jobType,
 		Enabled:    enabled,
 		OneShot:    strings.HasPrefix(expression, "at:"),
 	}
@@ -160,14 +170,16 @@ func (t *CronAddTool) parseNextRun(expr string) time.Time {
 	return time.Now().Add(5 * time.Minute)
 }
 
-// CronListTool lists all scheduled jobs.
+// CronListTool lists all scheduled cron jobs.
 type CronListTool struct {
 	BaseTool
-	workspaceDir string
+	workspaceDir  string
+	gatewayHost   string
+	gatewayPort   int
 }
 
 // NewCronListTool creates a new CronListTool.
-func NewCronListTool(workspaceDir string) *CronListTool {
+func NewCronListTool(workspaceDir string, gatewayHost string, gatewayPort int) *CronListTool {
 	schema := json.RawMessage(`{
 		"type": "object",
 		"properties": {}
@@ -175,16 +187,18 @@ func NewCronListTool(workspaceDir string) *CronListTool {
 	return &CronListTool{
 		BaseTool: *NewBaseTool(
 			"cron_list",
-			"列出所有已创建的定时任务，显示任务 ID、名称、下次执行时间、上次执行时间和状态。",
+			"列出所有定时任务。返回所有已创建的定时任务列表，包括任务ID、名称、执行表达式、上次运行状态等信息。",
 			schema,
 		),
 		workspaceDir: workspaceDir,
+		gatewayHost:  gatewayHost,
+		gatewayPort:  gatewayPort,
 	}
 }
 
 // Execute executes the cron list tool.
 func (t *CronListTool) Execute(ctx context.Context, args map[string]interface{}) (*ToolResult, error) {
-	scheduler := cron.GetScheduler(t.workspaceDir)
+	scheduler := cron.GetScheduler(t.workspaceDir, t.gatewayHost, t.gatewayPort)
 	jobs := scheduler.ListJobs()
 
 	if len(jobs) == 0 {
@@ -227,11 +241,13 @@ func (t *CronListTool) Execute(ctx context.Context, args map[string]interface{})
 // CronRemoveTool removes a scheduled job.
 type CronRemoveTool struct {
 	BaseTool
-	workspaceDir string
+	workspaceDir  string
+	gatewayHost   string
+	gatewayPort   int
 }
 
 // NewCronRemoveTool creates a new CronRemoveTool.
-func NewCronRemoveTool(workspaceDir string) *CronRemoveTool {
+func NewCronRemoveTool(workspaceDir string, gatewayHost string, gatewayPort int) *CronRemoveTool {
 	schema := json.RawMessage(`{
 		"type": "object",
 		"properties": {
@@ -246,6 +262,8 @@ func NewCronRemoveTool(workspaceDir string) *CronRemoveTool {
 			schema,
 		),
 		workspaceDir: workspaceDir,
+		gatewayHost:  gatewayHost,
+		gatewayPort:  gatewayPort,
 	}
 }
 
@@ -260,7 +278,7 @@ func (t *CronRemoveTool) Execute(ctx context.Context, args map[string]interface{
 		}, nil
 	}
 
-	scheduler := cron.GetScheduler(t.workspaceDir)
+	scheduler := cron.GetScheduler(t.workspaceDir, t.gatewayHost, t.gatewayPort)
 	if err := scheduler.RemoveJob(id); err != nil {
 		return &ToolResult{
 			Success: false,
@@ -278,11 +296,13 @@ func (t *CronRemoveTool) Execute(ctx context.Context, args map[string]interface{
 // CronRunTool runs a scheduled job immediately.
 type CronRunTool struct {
 	BaseTool
-	workspaceDir string
+	workspaceDir  string
+	gatewayHost   string
+	gatewayPort   int
 }
 
 // NewCronRunTool creates a new CronRunTool.
-func NewCronRunTool(workspaceDir string) *CronRunTool {
+func NewCronRunTool(workspaceDir string, gatewayHost string, gatewayPort int) *CronRunTool {
 	schema := json.RawMessage(`{
 		"type": "object",
 		"properties": {
@@ -297,6 +317,8 @@ func NewCronRunTool(workspaceDir string) *CronRunTool {
 			schema,
 		),
 		workspaceDir: workspaceDir,
+		gatewayHost:  gatewayHost,
+		gatewayPort:  gatewayPort,
 	}
 }
 
@@ -311,7 +333,7 @@ func (t *CronRunTool) Execute(ctx context.Context, args map[string]interface{}) 
 		}, nil
 	}
 
-	scheduler := cron.GetScheduler(t.workspaceDir)
+	scheduler := cron.GetScheduler(t.workspaceDir, t.gatewayHost, t.gatewayPort)
 	job, err := scheduler.GetJob(id)
 	if err != nil {
 		return &ToolResult{

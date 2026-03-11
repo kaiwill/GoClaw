@@ -21,6 +21,7 @@ type Job struct {
 	Name        string                 `json:"name"`
 	Expression  string                 `json:"expression"`
 	Command     string                 `json:"command"`
+	Type        string                 `json:"type"` // shell, python, nodejs, agent
 	NextRun     time.Time              `json:"next_run"`
 	LastRun     *time.Time             `json:"last_run,omitempty"`
 	LastStatus  string                 `json:"last_status,omitempty"`
@@ -40,12 +41,13 @@ type Store struct {
 
 // Scheduler manages cron job scheduling
 type Scheduler struct {
-	cron      *cron.Cron
-	store     *Store
-	running   bool
-	mu        sync.Mutex
-	ctx       context.Context
-	cancel    context.CancelFunc
+	cron           *cron.Cron
+	store          *Store
+	running        bool
+	mu             sync.Mutex
+	ctx            context.Context
+	cancel         context.CancelFunc
+	gatewayAddress string
 }
 
 var (
@@ -54,15 +56,15 @@ var (
 )
 
 // GetScheduler returns the singleton scheduler instance
-func GetScheduler(workspaceDir string) *Scheduler {
+func GetScheduler(workspaceDir string, gatewayHost string, gatewayPort int) *Scheduler {
 	once.Do(func() {
-		defaultScheduler = NewScheduler(workspaceDir)
+		defaultScheduler = NewScheduler(workspaceDir, gatewayHost, gatewayPort)
 	})
 	return defaultScheduler
 }
 
 // NewScheduler creates a new scheduler
-func NewScheduler(workspaceDir string) *Scheduler {
+func NewScheduler(workspaceDir string, gatewayHost string, gatewayPort int) *Scheduler {
 	store := &Store{
 		jobs:     make(map[string]*Job),
 		filePath: filepath.Join(workspaceDir, ".cron_jobs.json"),
@@ -71,11 +73,14 @@ func NewScheduler(workspaceDir string) *Scheduler {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	gatewayAddress := fmt.Sprintf("http://%s:%d", gatewayHost, gatewayPort)
+
 	return &Scheduler{
-		cron:   cron.New(cron.WithSeconds()),
-		store:  store,
-		ctx:    ctx,
-		cancel: cancel,
+		cron:           cron.New(cron.WithSeconds()),
+		store:          store,
+		ctx:            ctx,
+		cancel:         cancel,
+		gatewayAddress: gatewayAddress,
 	}
 }
 
@@ -323,8 +328,8 @@ func (s *Scheduler) executeJob(id string) {
 	log.Printf("Executing job: %s (%s)", job.ID, job.Name)
 	s.store.mu.Unlock()
 
-	// Execute command
-	output, err = s.runCommand(job.Command)
+	// Execute command based on type
+	output, err = s.runJobByType(job)
 	duration := time.Since(startTime)
 
 	// Update job with lock
@@ -361,6 +366,73 @@ func (s *Scheduler) runCommand(command string) (string, error) {
 	defer cancel()
 
 	cmd := s.ctxCommand(ctx, command)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// runJobByType executes a job based on its type
+func (s *Scheduler) runJobByType(job *Job) (string, error) {
+	jobType := job.Type
+	if jobType == "" {
+		jobType = "shell" // default to shell
+	}
+
+	switch jobType {
+	case "shell":
+		return s.runShellCommand(job.Command)
+	case "python":
+		return s.runPythonCommand(job.Command)
+	case "nodejs", "node":
+		return s.runNodeCommand(job.Command)
+	case "agent":
+		return s.runAgentCommand(job.Command)
+	default:
+		return s.runShellCommand(job.Command)
+	}
+}
+
+// runShellCommand executes a shell command
+func (s *Scheduler) runShellCommand(command string) (string, error) {
+	ctx, cancel := context.WithTimeout(s.ctx, 2*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// runPythonCommand executes a Python script
+func (s *Scheduler) runPythonCommand(script string) (string, error) {
+	ctx, cancel := context.WithTimeout(s.ctx, 3*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "python3", "-c", script)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// runNodeCommand executes a Node.js script
+func (s *Scheduler) runNodeCommand(script string) (string, error) {
+	ctx, cancel := context.WithTimeout(s.ctx, 3*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "node", "-e", script)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// runAgentCommand calls the Agent API to execute a task
+func (s *Scheduler) runAgentCommand(message string) (string, error) {
+	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Minute)
+	defer cancel()
+
+	apiURL := s.gatewayAddress + "/api/chat"
+	payload := fmt.Sprintf(`{"message": %s, "session_id": "cron_task"}`, message)
+
+	cmd := exec.CommandContext(ctx, "curl", "-s", "-X", "POST", apiURL,
+		"-H", "Content-Type: application/json",
+		"-d", payload)
+	
 	output, err := cmd.CombinedOutput()
 	return string(output), err
 }
