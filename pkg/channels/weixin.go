@@ -141,36 +141,53 @@ func (c *WeixinChannel) Send(ctx context.Context, message *types.SendMessage) er
 		return fmt.Errorf("weixin: recipient is required")
 	}
 
-	userID := to
-	if idx := strings.Index(to, ":"); idx > 0 {
-		userID = to[:idx]
-	}
+	userIDs := strings.Split(to, ",")
+	var lastErr error
+	for _, userID := range userIDs {
+		userID = strings.TrimSpace(userID)
+		if idx := strings.Index(userID, ":"); idx > 0 {
+			userID = userID[:idx]
+		}
 
-	contextToken := c.getContextToken(c.accountID, userID)
-	if contextToken == "" {
-		log.Printf("[weixin] 未找到 context token, accountID=%s, userID=%s", c.accountID, userID)
-		return fmt.Errorf("weixin: context token is required for sending messages")
-	}
+		if userID == "" {
+			continue
+		}
 
-	clientID := generateClientID()
-	req := &SendMessageReq{
-		Msg: &WeixinMessage{
-			FromUserID:  "",
-			ToUserID:    userID,
-			ClientID:    clientID,
-			MessageType: MessageTypeBot,
-			MessageState: MessageStateFinish,
-			ItemList: []*MessageItem{
-				{
-					Type:     MessageItemTypeText,
-					TextItem: &TextItem{Text: message.Content},
+		contextToken := c.getContextToken(c.accountID, userID)
+		if contextToken == "" {
+			log.Printf("[weixin] 未找到 context token, accountID=%s, userID=%s", c.accountID, userID)
+			lastErr = fmt.Errorf("weixin: context token is required for sending messages to %s", userID)
+			continue
+		}
+
+		clientID := generateClientID()
+		req := &SendMessageReq{
+			Msg: &WeixinMessage{
+				FromUserID:  "",
+				ToUserID:    userID,
+				ClientID:    clientID,
+				MessageType: MessageTypeBot,
+				MessageState: MessageStateFinish,
+				ItemList: []*MessageItem{
+					{
+						Type:     MessageItemTypeText,
+						TextItem: &TextItem{Text: message.Content},
+					},
 				},
+				ContextToken: contextToken,
 			},
-			ContextToken: contextToken,
-		},
+		}
+
+		if err := c.sendMessageAPI(ctx, req); err != nil {
+			log.Printf("[weixin] 发送消息到 %s 失败: %v", userID, err)
+			lastErr = err
+		}
 	}
 
-	return c.sendMessageAPI(ctx, req)
+	if lastErr != nil {
+		return lastErr
+	}
+	return nil
 }
 
 func (c *WeixinChannel) Listen(ctx context.Context, msgChan chan<- types.ChannelMessage) error {
@@ -471,101 +488,126 @@ func (c *WeixinChannel) SendMedia(ctx context.Context, to, text, filePath string
 		return fmt.Errorf("weixin: 未登录，请先运行登录命令扫描二维码")
 	}
 
-	contextToken := c.getContextToken(c.accountID, to)
-	if contextToken == "" {
-		return fmt.Errorf("weixin: context token is required for sending media")
-	}
+	userIDs := strings.Split(to, ",")
+	var lastErr error
+	for _, userID := range userIDs {
+		userID = strings.TrimSpace(userID)
+		if idx := strings.Index(userID, ":"); idx > 0 {
+			userID = userID[:idx]
+		}
 
-	uploaded, err := c.uploadFile(ctx, filePath, to)
-	if err != nil {
-		return fmt.Errorf("upload failed: %w", err)
-	}
+		if userID == "" {
+			continue
+		}
 
-	mimeType := getMimeType(filePath)
-	var req *SendMessageReq
+		contextToken := c.getContextToken(c.accountID, userID)
+		if contextToken == "" {
+			log.Printf("[weixin] 未找到 context token, accountID=%s, userID=%s", c.accountID, userID)
+			lastErr = fmt.Errorf("weixin: context token is required for sending media to %s", userID)
+			continue
+		}
 
-	if strings.HasPrefix(mimeType, "image/") {
-		req = &SendMessageReq{
-			Msg: &WeixinMessage{
-				ToUserID:     to,
-				ClientID:     generateClientID(),
-				MessageType:  MessageTypeBot,
-				MessageState: MessageStateFinish,
-				ItemList: []*MessageItem{
-					{
-						Type: MessageItemTypeImage,
-						ImageItem: &ImageItem{
-							Media: &CDNMedia{
-								EncryptQueryParam: uploaded.DownloadEncryptedQueryParam,
-								AesKey:            base64.StdEncoding.EncodeToString(uploaded.AesKey),
-								EncryptType:       1,
+		uploaded, err := c.uploadFile(ctx, filePath, userID)
+		if err != nil {
+			log.Printf("[weixin] 上传文件到 %s 失败: %v", userID, err)
+			lastErr = err
+			continue
+		}
+
+		mimeType := getMimeType(filePath)
+		var req *SendMessageReq
+
+		if strings.HasPrefix(mimeType, "image/") {
+			req = &SendMessageReq{
+				Msg: &WeixinMessage{
+					ToUserID:     userID,
+					ClientID:     generateClientID(),
+					MessageType:  MessageTypeBot,
+					MessageState: MessageStateFinish,
+					ItemList: []*MessageItem{
+						{
+							Type: MessageItemTypeImage,
+							ImageItem: &ImageItem{
+								Media: &CDNMedia{
+									EncryptQueryParam: uploaded.DownloadEncryptedQueryParam,
+									AesKey:            base64.StdEncoding.EncodeToString(uploaded.AesKey),
+									EncryptType:       1,
+								},
+								MidSize: uploaded.FileSizeCiphertext,
 							},
-							MidSize: uploaded.FileSizeCiphertext,
 						},
 					},
+					ContextToken: contextToken,
 				},
-				ContextToken: contextToken,
-			},
-		}
-	} else if strings.HasPrefix(mimeType, "video/") {
-		req = &SendMessageReq{
-			Msg: &WeixinMessage{
-				ToUserID:     to,
-				ClientID:     generateClientID(),
-				MessageType:  MessageTypeBot,
-				MessageState: MessageStateFinish,
-				ItemList: []*MessageItem{
-					{
-						Type: MessageItemTypeVideo,
-						VideoItem: &VideoItem{
-							Media: &CDNMedia{
-								EncryptQueryParam: uploaded.DownloadEncryptedQueryParam,
-								AesKey:            base64.StdEncoding.EncodeToString(uploaded.AesKey),
-								EncryptType:       1,
+			}
+		} else if strings.HasPrefix(mimeType, "video/") {
+			req = &SendMessageReq{
+				Msg: &WeixinMessage{
+					ToUserID:     userID,
+					ClientID:     generateClientID(),
+					MessageType:  MessageTypeBot,
+					MessageState: MessageStateFinish,
+					ItemList: []*MessageItem{
+						{
+							Type: MessageItemTypeVideo,
+							VideoItem: &VideoItem{
+								Media: &CDNMedia{
+									EncryptQueryParam: uploaded.DownloadEncryptedQueryParam,
+									AesKey:            base64.StdEncoding.EncodeToString(uploaded.AesKey),
+									EncryptType:       1,
+								},
+								VideoSize: uploaded.FileSizeCiphertext,
 							},
-							VideoSize: uploaded.FileSizeCiphertext,
 						},
 					},
+					ContextToken: contextToken,
 				},
-				ContextToken: contextToken,
-			},
-		}
-	} else {
-		fileName := filepath.Base(filePath)
-		req = &SendMessageReq{
-			Msg: &WeixinMessage{
-				ToUserID:     to,
-				ClientID:     generateClientID(),
-				MessageType:  MessageTypeBot,
-				MessageState: MessageStateFinish,
-				ItemList: []*MessageItem{
-					{
-						Type: MessageItemTypeFile,
-						FileItem: &FileItem{
-							Media: &CDNMedia{
-								EncryptQueryParam: uploaded.DownloadEncryptedQueryParam,
-								AesKey:            base64.StdEncoding.EncodeToString(uploaded.AesKey),
-								EncryptType:       1,
+			}
+		} else {
+			fileName := filepath.Base(filePath)
+			req = &SendMessageReq{
+				Msg: &WeixinMessage{
+					ToUserID:     userID,
+					ClientID:     generateClientID(),
+					MessageType:  MessageTypeBot,
+					MessageState: MessageStateFinish,
+					ItemList: []*MessageItem{
+						{
+							Type: MessageItemTypeFile,
+							FileItem: &FileItem{
+								Media: &CDNMedia{
+									EncryptQueryParam: uploaded.DownloadEncryptedQueryParam,
+									AesKey:            base64.StdEncoding.EncodeToString(uploaded.AesKey),
+									EncryptType:       1,
+								},
+								FileName: fileName,
+								Len:      fmt.Sprintf("%d", uploaded.FileSize),
 							},
-							FileName: fileName,
-							Len:      fmt.Sprintf("%d", uploaded.FileSize),
 						},
 					},
+					ContextToken: contextToken,
 				},
-				ContextToken: contextToken,
-			},
+			}
+		}
+
+		if text != "" {
+			textItem := &MessageItem{
+				Type:     MessageItemTypeText,
+				TextItem: &TextItem{Text: text},
+			}
+			req.Msg.ItemList = append([]*MessageItem{textItem}, req.Msg.ItemList...)
+		}
+
+		if err := c.sendMessageAPI(ctx, req); err != nil {
+			log.Printf("[weixin] 发送媒体到 %s 失败: %v", userID, err)
+			lastErr = err
 		}
 	}
 
-	if text != "" {
-		textItem := &MessageItem{
-			Type:     MessageItemTypeText,
-			TextItem: &TextItem{Text: text},
-		}
-		req.Msg.ItemList = append([]*MessageItem{textItem}, req.Msg.ItemList...)
+	if lastErr != nil {
+		return lastErr
 	}
-
-	return c.sendMessageAPI(ctx, req)
+	return nil
 }
 
 type UploadedFileInfo struct {

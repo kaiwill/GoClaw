@@ -1,0 +1,46 @@
+[
+  {
+    "id": "job-1773192639999272000",
+    "name": "爱尔眼科股票分析定时任务",
+    "expression": "*/10 9-15 * * 1-5",
+    "command": "使用 wecom_send 工具发送股票分析结果。分析股票爱尔眼科(300015)，把分析报告发送到企业微信",
+    "type": "agent",
+    "next_run": "2026-03-24T09:15:00.019714+08:00",
+    "last_run": "2026-03-24T09:10:00.00614+08:00",
+    "last_status": "error: exit status 7",
+    "enabled": true,
+    "one_shot": false,
+    "created_at": "2026-03-11T09:30:39.999272+08:00",
+    "metadata": {
+      "entry_id": 3
+    }
+  },
+  {
+    "id": "job-1773125517112518000",
+    "name": "每日股票分析-爱尔眼科-邮件发送",
+    "expression": "0 16 * * 1-5",
+    "command": "分析股票爱尔眼科(300015)，把分析结果发送到 270901361@qq.com。然后使用 file_write 工具（json_array=true）把分析数据保存到 /Users/haha/.goclaw/workspace/stock_data.json",
+    "type": "agent",
+    "next_run": "2026-03-24T08:47:42.460406+08:00",
+    "enabled": true,
+    "one_shot": false,
+    "created_at": "2026-03-10T14:51:57.112517+08:00",
+    "metadata": {
+      "entry_id": 1
+    }
+  },
+  {
+    "id": "job-1773123428060515000",
+    "name": "周五股票汇总邮件",
+    "expression": "0 18 * * 5",
+    "command": "使用 file_read 工具读取 /Users/haha/.goclaw/workspace/stock_data.json 文件，汇总本周股票分析数据，生成周报发送到 270901361@qq.com，然后使用 file_write 工具（content 设为 []，append=false）清空该文件",
+    "type": "agent",
+    "next_run": "2026-03-24T08:47:42.460411+08:00",
+    "enabled": true,
+    "one_shot": false,
+    "created_at": "2026-03-10T14:17:08.060515+08:00",
+    "metadata": {
+      "entry_id": 2
+    }
+  }
+]
