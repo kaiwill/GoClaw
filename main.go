@@ -72,6 +72,17 @@ func GetWecomChannel() *channels.WecomChannel {
 	return nil
 }
 
+func GetWeixinChannel() *channels.WeixinChannel {
+	ch := globalChannelRegistry.Get("weixin")
+	if ch == nil {
+		return nil
+	}
+	if weixinCh, ok := ch.(*channels.WeixinChannel); ok {
+		return weixinCh
+	}
+	return nil
+}
+
 // memoryImpl implements the agent.Memory interface
 type memoryImpl struct {
 	backend memory.MemoryBackend
@@ -258,6 +269,7 @@ func init() {
 
 	channelCmd.AddCommand(channelListCmd)
 	channelCmd.AddCommand(channelTestCmd)
+	channelCmd.AddCommand(channelLoginCmd)
 
 	providerCmd.AddCommand(providerListCmd)
 	providerCmd.AddCommand(providerTestCmd)
@@ -899,46 +911,67 @@ var daemonCmd = &cobra.Command{
 			fmt.Printf("  通道: %s\n", channelName)
 		}
 		
+		// Auto-start weixin channel if logged in (zero-config)
+		if _, hasWeixin := cfg.Channels["weixin"]; !hasWeixin {
+			weixinCh := channels.NewWeixinChannel(&channels.WeixinConfig{})
+			if weixinCh.IsConfigured() {
+				channelMap["weixin"] = weixinCh
+				globalChannelRegistry.Register("weixin", weixinCh)
+				log.Printf("自动启动微信渠道 (已登录账号: %s)", weixinCh.GetAccountID())
+				
+				channelWG.Add(1)
+				go func() {
+					defer channelWG.Done()
+					log.Printf("启动通道: weixin")
+					if err := weixinCh.Listen(ctx, msgChan); err != nil {
+						log.Printf("通道 weixin 错误: %v", err)
+					}
+				}()
+				startedChannels++
+				fmt.Printf("  通道: weixin (自动检测，账号: %s)\n", weixinCh.GetAccountID())
+			}
+		}
+		
 		if startedChannels == 0 {
 			fmt.Println("  未配置任何通道")
 		}
 		
 		// Start message processor with channel map for replies
-	channelWG.Add(1)
-	go func() {
-		defer channelWG.Done()
-		log.Printf("启动消息处理器, channelMap size=%d", len(channelMap))
-		for chName := range channelMap {
-			log.Printf("  通道: %s", chName)
-		}
-		processChannelMessages(ctx, agt, msgChan, channelMap)
-	}()
+		channelWG.Add(1)
+		go func() {
+			defer channelWG.Done()
+			log.Printf("启动消息处理器, channelMap size=%d", len(channelMap))
+			for chName := range channelMap {
+				log.Printf("  通道: %s", chName)
+			}
+			processChannelMessages(ctx, agt, msgChan, channelMap)
+		}()
 
 		sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
-	go func() {
-		<-sigChan
-		fmt.Println("\n关闭守护进程...")
-		log.Printf("收到信号，开始关闭守护进程")
-		
-		// Cancel context to stop all goroutines
-		cancel()
-		
-		if err := srv.Stop(context.Background()); err != nil {
-			log.Printf("关闭网关服务器失败: %v", err)
-		}
-		
-		close(msgChan)
-		channelWG.Wait()
+		go func() {
+			<-sigChan
+			fmt.Println("\n关闭守护进程...")
+			log.Printf("收到信号，开始关闭守护进程")
+			
+			// Cancel context to stop all goroutines
+			cancel()
+			
+			if err := srv.Stop(context.Background()); err != nil {
+				log.Printf("关闭网关服务器失败: %v", err)
+			}
+			
+			close(msgChan)
+			channelWG.Wait()
 
-		fmt.Println("守护进程已停止")
-		os.Exit(0)
-	}()
+			fmt.Println("守护进程已停止")
+			os.Exit(0)
+		}()
 
-	// Wait for context to be canceled
-	<-ctx.Done()
-	return nil
+		// Wait for context to be canceled
+		<-ctx.Done()
+		return nil
 	},
 }
 
@@ -1006,6 +1039,19 @@ func createChannelFromConfig(name string, cfg config.ChannelConfig) channels.Cha
 			return nil
 		}
 		return channels.NewWecomChannel(botID, botSecret)
+	case "weixin":
+		token := cfg["token"]
+		baseURL := cfg["base_url"]
+		cdnBaseURL := cfg["cdn_base_url"]
+		accountID := cfg["account_id"]
+		allowedUsers := parseAllowedUsers(cfg["allowed_users"])
+		return channels.NewWeixinChannel(&channels.WeixinConfig{
+			Token:       token,
+			BaseURL:     baseURL,
+			CDNBaseURL:  cdnBaseURL,
+			AccountID:   accountID,
+			AllowedUsers: allowedUsers,
+		})
 	default:
 		log.Printf("未知通道类型: %s", name)
 		return nil
@@ -1138,6 +1184,26 @@ var channelListCmd = &cobra.Command{
 		fmt.Println("  - matrix:    Matrix Client-Server API")
 		fmt.Println("  - dingtalk:  DingTalk Bot API")
 		fmt.Println("  - email:     SMTP Email")
+		fmt.Println("  - weixin:    微信 iLink Bot API (扫码登录)")
+	},
+}
+
+var channelLoginCmd = &cobra.Command{
+	Use:   "login",
+	Short: "登录微信渠道 (扫码登录)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fmt.Println("正在启动微信扫码登录...")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+
+		ch := channels.NewWeixinChannel(&channels.WeixinConfig{})
+		if err := ch.LoginWithQR(ctx); err != nil {
+			return fmt.Errorf("登录失败: %w", err)
+		}
+
+		fmt.Printf("账号 ID: %s\n", ch.GetAccountID())
+		return nil
 	},
 }
 

@@ -73,6 +73,14 @@ type WecomConfig struct {
 	DefaultTo  string
 }
 
+type WeixinConfig struct {
+	Token       string
+	BaseURL     string
+	CDNBaseURL  string
+	AccountID   string
+	AllowedUsers []string
+}
+
 func Default() *Config {
 	homeDir, _ := os.UserHomeDir()
 	defaultSkillsDir := "."
@@ -311,6 +319,32 @@ func (c *Config) GetWecomConfig() *WecomConfig {
 		BotSecret: cfg["bot_secret"],
 		DefaultTo: cfg["default_to"],
 	}
+}
+
+func (c *Config) GetWeixinConfig() *WeixinConfig {
+	cfg, ok := c.Channels["weixin"]
+	if !ok {
+		return nil
+	}
+
+	wx := &WeixinConfig{
+		Token:     cfg["token"],
+		BaseURL:   cfg["base_url"],
+		CDNBaseURL: cfg["cdn_base_url"],
+		AccountID: cfg["account_id"],
+	}
+
+	if users, ok := cfg["allowed_users"]; ok {
+		users = strings.Trim(users, "[]")
+		for _, u := range strings.Split(users, ",") {
+			u = strings.TrimSpace(strings.Trim(u, "\"'"))
+			if u != "" {
+				wx.AllowedUsers = append(wx.AllowedUsers, u)
+			}
+		}
+	}
+
+	return wx
 }
 
 // HasChannels returns true if any channel is configured

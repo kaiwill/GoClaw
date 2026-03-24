@@ -132,7 +132,32 @@ allowed_users = ["*"]
 2. 进入「应用管理」→「应用」→「智能机器人」
 3. 创建或选择机器人应用
 4. 在应用详情页获取 `bot_id` 和 `bot_secret`
-5. 将机器人添加到群聊中（群聊需要 @机器人才能触发）
+5. 将机器人添加到群聊中（群聊需要 @机器人 才能触发）
+
+**使用微信 iLink Bot（个人微信机器人）：**
+
+```toml
+[channels_config.weixin]
+enable = true
+```
+
+**微信 iLink Bot 使用方法：**
+1. 首次使用需要扫码登录：
+   ```bash
+   goclaw channel login
+   ```
+2. 扫描终端显示的二维码完成登录
+3. 登录成功后，凭证会自动保存到 `~/.goclaw/weixin/accounts/` 目录
+4. 之后启动 daemon 会自动加载已登录的账号：
+   ```bash
+   goclaw daemon
+   ```
+5. 在微信中给机器人发消息即可与 AI 对话
+
+**特点：**
+- 零配置：扫码登录后自动保存凭证，无需手动配置 token
+- 多账号支持：可登录多个微信账号
+- 自动重连：服务重启后自动加载已保存的账号
 
 **注意**：配置文件位置已更改为 `~/.goclaw/config.toml`，不再使用 `~/.goclaw/config.toml`
 
