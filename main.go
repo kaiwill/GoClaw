@@ -269,7 +269,8 @@ func init() {
 
 	channelCmd.AddCommand(channelListCmd)
 	channelCmd.AddCommand(channelTestCmd)
-	channelCmd.AddCommand(channelLoginCmd)
+	channelCmd.AddCommand(channelWeixinCmd)
+	channelWeixinCmd.AddCommand(channelWeixinLoginCmd)
 
 	providerCmd.AddCommand(providerListCmd)
 	providerCmd.AddCommand(providerTestCmd)
@@ -1188,7 +1189,12 @@ var channelListCmd = &cobra.Command{
 	},
 }
 
-var channelLoginCmd = &cobra.Command{
+var channelWeixinCmd = &cobra.Command{
+	Use:   "weixin",
+	Short: "微信渠道管理",
+}
+
+var channelWeixinLoginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "登录微信渠道 (扫码登录)",
 	RunE: func(cmd *cobra.Command, args []string) error {

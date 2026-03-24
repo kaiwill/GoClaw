@@ -15,7 +15,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -762,9 +764,13 @@ func (c *WeixinChannel) LoginWithQR(ctx context.Context) error {
 		return fmt.Errorf("failed to get QR code: %s", result.Message)
 	}
 
-	fmt.Println("\n请使用微信扫描以下二维码登录：")
-	fmt.Println(result.QRCodeURL)
-	fmt.Println()
+	fmt.Println("\n请使用微信扫描二维码登录...")
+	fmt.Printf("二维码链接: %s\n", result.QRCodeURL)
+	fmt.Println("正在打开浏览器...")
+
+	if err := openBrowser(result.QRCodeURL); err != nil {
+		fmt.Printf("无法自动打开浏览器，请手动访问: %s\n", result.QRCodeURL)
+	}
 
 	waitResult, err := qrManager.WaitForLogin(ctx, result.SessionKey, c.baseURL, 480000)
 	if err != nil {
@@ -794,4 +800,17 @@ func (c *WeixinChannel) LoginWithQR(ctx context.Context) error {
 
 	fmt.Println("\n✅ 微信登录成功！")
 	return nil
+}
+
+func openBrowser(url string) error {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", url).Start()
+	case "linux":
+		return exec.Command("xdg-open", url).Start()
+	case "windows":
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	default:
+		return fmt.Errorf("unsupported platform")
+	}
 }
