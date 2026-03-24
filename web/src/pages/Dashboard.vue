@@ -185,6 +185,7 @@ import {
 import type { StatusResponse, CostSummary } from '../types/api'
 import { getStatus, getCost } from '../lib/api'
 import { useI18n } from '../lib/i18n'
+import { useStore } from '../store'
 
 const { t } = useI18n()
 
@@ -255,8 +256,17 @@ const costItems = computed(() => {
 
 onMounted(async () => {
   try {
-    const [s, c] = await Promise.all([getStatus(), getCost()])
+    const store = useStore()
+    let s = store.status
+    
+    // 如果 store 中没有状态，则调用 API 获取
+    if (!s) {
+      s = await getStatus()
+      store.setStatus(s)
+    }
+    
     status.value = s
+    const c = await getCost()
     cost.value = c
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('common.error')

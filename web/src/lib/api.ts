@@ -68,7 +68,7 @@ function unwrapField<T>(value: T | Record<string, T>, key: string): T {
 }
 
 export async function pair(code: string): Promise<{ token: string }> {
-  const response = await fetch('/pair', {
+  const response = await fetch('/api/pair', {
     method: 'POST',
     headers: { 'X-Pairing-Code': code },
   });
@@ -84,7 +84,7 @@ export async function pair(code: string): Promise<{ token: string }> {
 }
 
 export async function getPublicHealth(): Promise<{ require_pairing: boolean; paired: boolean }> {
-  const response = await fetch('/health');
+  const response = await fetch('/api/health');
   if (!response.ok) {
     throw new Error(`Health check failed (${response.status})`);
   }
@@ -167,7 +167,10 @@ export function getMemory(
   if (category) params.set('category', category);
   const qs = params.toString();
   return apiFetch<MemoryEntry[] | { entries: MemoryEntry[] }>(`/api/memory${qs ? `?${qs}` : ''}`).then(
-    (data) => unwrapField(data, 'entries'),
+    (data) => {
+      data.entries = data.entries || [];
+      return unwrapField(data, 'entries') || [];
+    },
   );
 }
 
@@ -198,4 +201,51 @@ export function getCliTools(): Promise<CliTool[]> {
   return apiFetch<CliTool[] | { cli_tools: CliTool[] }>('/api/cli-tools').then((data) =>
     unwrapField(data, 'cli_tools'),
   );
+}
+
+// WeChat login APIs
+export async function getWechatLoginURL(): Promise<{ login_url: string; state: string }> {
+  return apiFetch<{ login_url: string; state: string }>('/api/auth/wechat/login');
+}
+
+export async function getWechatUserInfo(): Promise<{ status: string; user: any }> {
+  return apiFetch<{ status: string; user: any }>('/api/auth/wechat/user');
+}
+
+// User APIs
+export async function getUserInfo(): Promise<{ status: string; user: any }> {
+  return apiFetch<{ status: string; user: any }>('/api/auth/user/info');
+}
+
+export async function updateUserInfo(data: { email?: string; avatar?: string }): Promise<{ status: string; user: any }> {
+  return apiFetch<{ status: string; user: any }>('/api/auth/user/update', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+// Admin APIs
+export async function adminLogin(data: { username: string; password: string }): Promise<{ status: string; token: string; admin: any }> {
+  return apiFetch<{ status: string; token: string; admin: any }>('/api/auth/admin/login', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getAdminUsers(): Promise<{ status: string; users: any[] }> {
+  return apiFetch<{ status: string; users: any[] }>('/api/auth/admin/users');
+}
+
+export async function approveUser(data: { user_id: number; status: number }): Promise<{ status: string; user: any }> {
+  return apiFetch<{ status: string; user: any }>('/api/auth/admin/users/approve', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function changeAdminPassword(data: { old_password: string; new_password: string }): Promise<{ status: string; message: string }> {
+  return apiFetch<{ status: string; message: string }>('/api/auth/admin/password', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 }

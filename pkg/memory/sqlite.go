@@ -5,13 +5,30 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
+
+func escapeFTSQuery(query string) string {
+	specialChars := []string{"\"", "*", "(", ")", "-", "+", "~", "<", ">", "@", ":", ".", "/", "`", ","}
+	escaped := query
+	for _, char := range specialChars {
+		escaped = strings.ReplaceAll(escaped, char, " ")
+	}
+	
+	words := strings.Fields(escaped)
+	if len(words) == 0 {
+		return query
+	}
+	
+	return strings.Join(words, " ")
+}
 
 type SQLiteMemoryBackend struct {
 	dbPath     string
@@ -33,7 +50,7 @@ func NewSQLiteMemoryBackend(dbPath string) (*SQLiteMemoryBackend, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to get home directory: %w", err)
 		}
-		dbPath = filepath.Join(homeDir, ".zeroclaw", "memory", "brain.db")
+		dbPath = filepath.Join(homeDir, ".goclaw", "memory", "brain.db")
 	}
 
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
@@ -77,19 +94,17 @@ func (m *SQLiteMemoryBackend) initSchema() error {
 		`CREATE INDEX IF NOT EXISTS idx_memories_key ON memories(key)`,
 		`CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id)`,
 		`CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-			key, content, content=memories, content_rowid=rowid
+			key, content
 		)`,
 		`CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
 			INSERT INTO memories_fts(rowid, key, content)
 			VALUES (new.rowid, new.key, new.content);
 		END`,
 		`CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-			INSERT INTO memories_fts(memories_fts, rowid, key, content)
-			VALUES ('delete', old.rowid, old.key, old.content);
+			DELETE FROM memories_fts WHERE rowid = old.rowid;
 		END`,
 		`CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE OF key, content ON memories BEGIN
-			INSERT INTO memories_fts(memories_fts, rowid, key, content)
-			VALUES ('delete', old.rowid, old.key, old.content);
+			DELETE FROM memories_fts WHERE rowid = old.rowid;
 			INSERT INTO memories_fts(rowid, key, content)
 			VALUES (new.rowid, new.key, new.content);
 		END`,
@@ -326,6 +341,8 @@ func (m *SQLiteMemoryBackend) Import(ctx context.Context, path string) error {
 func (m *SQLiteMemoryBackend) searchFTS(ctx context.Context, query string, limit int, category *string) ([]MemoryEntry, error) {
 	entries := []MemoryEntry{}
 
+	escapedQuery := escapeFTSQuery(query)
+
 	sqlQuery := `
 		SELECT m.id, m.key, m.content, m.category, m.created_at, m.updated_at,
 			   bm25(memories_fts) as score
@@ -333,7 +350,7 @@ func (m *SQLiteMemoryBackend) searchFTS(ctx context.Context, query string, limit
 		JOIN memories_fts fts ON m.rowid = fts.rowid
 		WHERE memories_fts MATCH ?
 	`
-	args := []interface{}{query}
+	args := []interface{}{escapedQuery}
 
 	if category != nil {
 		sqlQuery += ` AND m.category = ?`
@@ -345,7 +362,8 @@ func (m *SQLiteMemoryBackend) searchFTS(ctx context.Context, query string, limit
 
 	rows, err := m.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
-		return nil, err
+		log.Printf("Memory FTS query error: %v, falling back to LIKE search", err)
+		return m.searchLike(ctx, query, limit, category)
 	}
 	defer rows.Close()
 
@@ -353,12 +371,55 @@ func (m *SQLiteMemoryBackend) searchFTS(ctx context.Context, query string, limit
 		var entry MemoryEntry
 		var score float64
 		if err := rows.Scan(&entry.ID, &entry.Key, &entry.Content, &entry.Category, &entry.CreatedAt, &entry.UpdatedAt, &score); err != nil {
+			log.Printf("Memory FTS scan error: %v, falling back to LIKE search", err)
+			return m.searchLike(ctx, query, limit, category)
+		}
+		entries = append(entries, entry)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Printf("Memory FTS rows error: %v, falling back to LIKE search", err)
+		return m.searchLike(ctx, query, limit, category)
+	}
+
+	return entries, nil
+}
+
+func (m *SQLiteMemoryBackend) searchLike(ctx context.Context, query string, limit int, category *string) ([]MemoryEntry, error) {
+	entries := []MemoryEntry{}
+
+	searchPattern := "%" + query + "%"
+
+	sqlQuery := `
+		SELECT id, key, content, category, created_at, updated_at
+		FROM memories
+		WHERE (key LIKE ? OR content LIKE ?)
+	`
+	args := []interface{}{searchPattern, searchPattern}
+
+	if category != nil {
+		sqlQuery += ` AND category = ?`
+		args = append(args, *category)
+	}
+
+	sqlQuery += ` LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := m.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var entry MemoryEntry
+		if err := rows.Scan(&entry.ID, &entry.Key, &entry.Content, &entry.Category, &entry.CreatedAt, &entry.UpdatedAt); err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)
 	}
 
-	return entries, nil
+	return entries, rows.Err()
 }
 
 func (m *SQLiteMemoryBackend) searchVector(ctx context.Context, query string, limit int, category *string) ([]MemoryEntry, error) {

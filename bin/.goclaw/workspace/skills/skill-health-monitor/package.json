@@ -1,0 +1,10 @@
+{
+  "name": "skill-health-monitor",
+  "version": "1.0.0",
+  "description": "Scans and reports broken or incomplete skills in the workspace.",
+  "main": "index.js",
+  "dependencies": {},
+  "scripts": {
+    "start": "node index.js"
+  }
+}

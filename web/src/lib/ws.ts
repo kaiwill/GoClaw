@@ -34,8 +34,11 @@ export class WebSocketClient {
 
   constructor(options: WebSocketClientOptions = {}) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    this.baseUrl =
-      options.baseUrl ?? `${protocol}//${window.location.host}`
+    // 直接连接到后端服务器，不通过Vite代理
+    const host = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      ? 'localhost:4096'
+      : window.location.host
+    this.baseUrl = options.baseUrl ?? `${protocol}//${host}`
     this.reconnectDelay = options.reconnectDelay ?? DEFAULT_RECONNECT_DELAY
     this.maxReconnectDelay = options.maxReconnectDelay ?? MAX_RECONNECT_DELAY
     this.autoReconnect = options.autoReconnect ?? true
@@ -47,15 +50,19 @@ export class WebSocketClient {
     this.clearReconnectTimer()
 
     const token = getToken()
-    const url = `${this.baseUrl}/ws/chat`
+    let url = `${this.baseUrl}/api/ws/chat`
     const protocols = ['zeroclaw.v1']
     if (token) {
-      protocols.push(`bearer.${token}`)
+      // 将token放在查询参数中
+      url += `?token=${encodeURIComponent(token)}`
     }
+
+    console.log('WebSocket connecting to:', url)
 
     this.ws = new WebSocket(url, protocols)
 
     this.ws.onopen = () => {
+      console.log('WebSocket connected')
       this.currentDelay = this.reconnectDelay
       this.onOpen?.()
     }
@@ -65,25 +72,34 @@ export class WebSocketClient {
         const msg = JSON.parse(ev.data) as WsMessage
         this.onMessage?.(msg)
       } catch {
-        // Ignore non-JSON frames
+        console.error('Failed to parse WebSocket message:', ev.data)
       }
     }
 
     this.ws.onclose = (ev: CloseEvent) => {
+      console.log('WebSocket closed:', ev.code, ev.reason)
       this.onClose?.(ev)
       this.scheduleReconnect()
     }
 
     this.ws.onerror = (ev: Event) => {
+      console.error('WebSocket error:', ev)
       this.onError?.(ev)
     }
   }
 
-  sendMessage(content: string): void {
+  sendMessage(content: string, sessionId?: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error('WebSocket is not connected')
     }
-    this.ws.send(JSON.stringify({ type: 'message', content }))
+    const message: { type: string; content: string; session_id?: string } = {
+      type: 'message',
+      content: content
+    }
+    if (sessionId) {
+      message.session_id = sessionId
+    }
+    this.ws.send(JSON.stringify(message))
   }
 
   disconnect(): void {

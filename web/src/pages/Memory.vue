@@ -289,6 +289,7 @@ const fetchEntries = (q?: string, cat?: string) => {
   loading.value = true
   getMemory(q || undefined, cat || undefined)
     .then((data) => {
+      data.entries=data.entries||[];
       entries.value = data
     })
     .catch((err) => {

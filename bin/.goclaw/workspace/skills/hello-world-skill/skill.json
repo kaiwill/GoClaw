@@ -1,0 +1,44 @@
+{
+  "name": "hello-world",
+  "description": "A simple skill that demonstrates shell, http, and script tool types",
+  "version": "0.1.0",
+  "tools": [
+    {
+      "name": "greet",
+      "description": "Prints a greeting message",
+      "kind": "shell",
+      "command": "echo Hello, {{name}}!"
+    },
+    {
+      "name": "get_time",
+      "description": "Gets the current time",
+      "kind": "shell",
+      "command": "date"
+    },
+    {
+      "name": "check_health",
+      "description": "Checks if a URL is healthy",
+      "kind": "http",
+      "command": "https://httpbin.org",
+      "args": {
+        "header:User-Agent": "GoClaw-Skill/1.0"
+      }
+    },
+    {
+      "name": "run_script",
+      "description": "Runs a Python script",
+      "kind": "script",
+      "command": "print('Hello from Python!')\nprint('Current time:', __import__('datetime').datetime.now())",
+      "args": {
+        "interpreter": "python3"
+      }
+    }
+  ],
+  "prompts": [
+    "This skill demonstrates how to use shell, HTTP, and script tools.",
+    "Use the greet tool with a name parameter to print a greeting.",
+    "Use the get_time tool to get the current time.",
+    "Use the check_health tool with a path argument to check URL health.",
+    "Use the run_script tool to execute Python code."
+  ]
+}

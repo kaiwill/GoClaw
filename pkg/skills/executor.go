@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -46,14 +48,31 @@ func (e *SkillToolExecutor) Description() string {
 func (e *SkillToolExecutor) ParametersSchema() json.RawMessage {
 	schema := map[string]interface{}{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"_": map[string]string{
-				"type":        "string",
-				"description": "Tool execution (handled internally)",
-			},
-		},
+		"properties": map[string]interface{}{},
 	}
 
+	// Add parameters from tool definition if available
+	if len(e.tool.Parameters) > 0 {
+		properties := make(map[string]interface{})
+		required := []string{}
+		for _, param := range e.tool.Parameters {
+			properties[param.Name] = map[string]interface{}{
+				"type":        param.Type,
+				"description": param.Description,
+			}
+			if param.Required {
+				required = append(required, param.Name)
+			}
+		}
+		schema["properties"] = properties
+		if len(required) > 0 {
+			schema["required"] = required
+		}
+		data, _ := json.Marshal(schema)
+		return json.RawMessage(data)
+	}
+
+	// Fallback to default schema
 	switch e.tool.Kind {
 	case "shell":
 		schema["properties"] = map[string]interface{}{
@@ -124,7 +143,7 @@ func (e *SkillToolExecutor) Execute(ctx context.Context, args map[string]interfa
 func (e *SkillToolExecutor) executeShell(ctx context.Context, args map[string]interface{}) (*tools.ToolResult, error) {
 	command := e.tool.Command
 
-	// If args contain a command, use it instead
+	// If args contain a command, use it instead (for backward compatibility)
 	if cmd, ok := args["command"].(string); ok && cmd != "" {
 		command = cmd
 	}
@@ -138,13 +157,20 @@ func (e *SkillToolExecutor) executeShell(ctx context.Context, args map[string]in
 	}
 
 	// Support template substitution from args
+	// Add default values for missing parameters
+	for _, param := range e.tool.Parameters {
+		if _, exists := args[param.Name]; !exists && param.Default != "" {
+			args[param.Name] = param.Default
+		}
+	}
 	for k, v := range args {
 		placeholder := "{{" + k + "}}"
 		command = strings.ReplaceAll(command, placeholder, fmt.Sprintf("%v", v))
 	}
 
-	parts := strings.Fields(command)
-	if len(parts) == 0 {
+	log.Printf("Executing shell command: %s", command)
+
+	if command == "" {
 		return &tools.ToolResult{
 			Success: false,
 			Output:  "",
@@ -152,7 +178,12 @@ func (e *SkillToolExecutor) executeShell(ctx context.Context, args map[string]in
 		}, nil
 	}
 
-	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
+	// Use shell to execute the command to support environment variables and complex syntax
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	if e.skillDir != "" {
+		cmd.Dir = e.skillDir
+	}
+	
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -269,6 +300,8 @@ func (e *SkillToolExecutor) executeScript(ctx context.Context, args map[string]i
 		script = strings.ReplaceAll(script, placeholder, fmt.Sprintf("%v", v))
 	}
 
+	log.Printf("Executing script: %s", script)
+
 	if script == "" {
 		return &tools.ToolResult{
 			Success: false,
@@ -316,8 +349,9 @@ func ConvertSkillToolsToTools(skills []*Skill, skillsDir string) []tools.Tool {
 	var result []tools.Tool
 
 	for _, skill := range skills {
+		skillDir := filepath.Join(skillsDir, skill.Name)
 		for _, tool := range skill.Tools {
-			result = append(result, NewSkillToolExecutor(skill, tool, skillsDir))
+			result = append(result, NewSkillToolExecutor(skill, tool, skillDir))
 		}
 	}
 

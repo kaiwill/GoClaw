@@ -1,0 +1,15 @@
+{
+  "name": "progressive-memory-helper",
+  "version": "1.0.0",
+  "description": "Helper tool for Progressive Memory (append/summary)",
+  "main": "index.js",
+  "bin": {
+    "mem-helper": "./index.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "commander": "^12.0.0"
+  }
+}

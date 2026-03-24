@@ -1,0 +1,47 @@
+[
+  {
+    "id": "job-1773192639999272000",
+    "name": "爱尔眼科股票分析定时任务",
+    "expression": "*/10 * * * *",
+    "command": "curl -s --max-time 110 -X POST http://localhost:4096/api/chat -H \"Content-Type: application/json\" -d '{\"message\": \"分析股票爱尔眼科，把结果发到我的企业微信\", \"session_id\": \"cron_task\"}'",
+    "next_run": "2026-03-11T16:55:28.242441+08:00",
+    "last_run": "2026-03-11T16:50:00.007008+08:00",
+    "last_status": "success",
+    "last_output": "{\"content\":\"✅ **任务完成！**\\n\\n已成功分析爱尔眼科(300015)并将结果发送到您的企业微信。主要分析结果：\\n\\n- **当前价格**: 10.29元（-0.48%）\\n- **总市值**: 959.58亿\\n- **估值**: PE 23.11倍，PB 4.28倍\\n- **技术面**: 短期均线空头排列，MACD死叉\\n- **综合评分**: 14/30（中性）\\n\\n如果您需要定期获取股票分析，可以告诉我设置定时任务。\",\"session_id\":\"cron_task\",\"status\":\"ok\"}\n",
+    "enabled": true,
+    "one_shot": false,
+    "created_at": "2026-03-11T09:30:39.999272+08:00",
+    "metadata": {
+      "entry_id": 1
+    }
+  },
+  {
+    "id": "job-1773125517112518000",
+    "name": "每日股票分析-爱尔眼科-邮件发送",
+    "expression": "0 16 * * 1-5",
+    "command": "python3 -c \"\nimport subprocess\nimport json\nfrom datetime import datetime\n\n# 获取股票分析\nstock_result = subprocess.run(['python3', '-c', '''\nimport sys\nsys.path.insert(0, \\\"/tmp/skills/stock-analyzer-skill\\\")\nfrom handler import analyze\nresult = analyze({\\\"stock\\\": \\\"爱尔眼科\\\", \\\"market\\\": \\\"sz\\\"})\nprint(json.dumps(result))\n'''], capture_output=True, text=True, timeout=60)\n\n# 准备邮件内容\nstock_data = stock_result.stdout.strip() if stock_result.stdout else '获取数据失败'\nemail_body = '''股票分析报告\n\n股票: 爱尔眼科 (300015)\n分析时间: ''' + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '''\n\n''' + stock_data + '''\n\n---\n本邮件由自动定时任务发送'''\n\n# 发送邮件\nimport sys\nsys.path.insert(0, '/tmp/skills/email-sender-skill')\nfrom handler import email_send\nresult = email_send(json.dumps({\n    'recipient': 'your-email@example.com',\n    'subject': '【每日股票分析】爱尔眼科 (300015)',\n    'body': email_body\n}))\nprint('任务完成:', result)\n\"",
+    "next_run": "2026-03-11T16:18:13.882518+08:00",
+    "last_run": "2026-03-11T16:00:00.00527+08:00",
+    "last_status": "error: exit status 1",
+    "last_output": "",
+    "enabled": true,
+    "one_shot": false,
+    "created_at": "2026-03-10T14:51:57.112517+08:00",
+    "metadata": {
+      "entry_id": 2
+    }
+  },
+  {
+    "id": "job-1773123428060515000",
+    "name": "周五股票汇总邮件",
+    "expression": "0 18 * * 5",
+    "command": "python3 -c \"\nfrom email_sender_skill import email_send\nimport json\nfrom datetime import datetime\n\n# 模拟一周汇总内容（实际可从文件或数据库读取）\nsummary = f'''爱尔眼科一周股票分析汇总\n\n汇总日期：{datetime.now().strftime('%Y-%m-%d')}\n\n本周股票分析已完成，详细内容请查看每日分析记录。\n\n---\n本邮件由自动系统发送\n'''\n\ndata = json.dumps({\n    'recipient': 'your-email@example.com',\n    'subject': f'爱尔眼科一周股票分析汇总 - {datetime.now().strftime(\"%Y-%m-%d\")}',\n    'body': summary\n})\n\nemail_send(data)\nprint('邮件发送成功')\n\"",
+    "next_run": "2026-03-11T16:18:13.882532+08:00",
+    "enabled": true,
+    "one_shot": false,
+    "created_at": "2026-03-10T14:17:08.060515+08:00",
+    "metadata": {
+      "entry_id": 3
+    }
+  }
+]

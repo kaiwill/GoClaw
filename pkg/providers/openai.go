@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -82,13 +83,35 @@ type OpenAIUsageInfo struct {
 }
 
 func (m OpenAIResponseMessage) effectiveContent() string {
+	content := ""
 	if m.Content != nil && *m.Content != "" {
-		return *m.Content
+		content = *m.Content
+	} else if m.ReasoningContent != nil {
+		content = *m.ReasoningContent
 	}
-	if m.ReasoningContent != nil {
-		return *m.ReasoningContent
+	
+	// Remove <think>...</think> tags (reasoning/thinking blocks from models like MiniMax)
+	return removeThinkTags(content)
+}
+
+func removeThinkTags(text string) string {
+	result := ""
+	rest := text
+	for {
+		start := strings.Index(rest, "<think>")
+		if start == -1 {
+			result += rest
+			break
+		}
+		result += rest[:start]
+		rest = rest[start+len("<think>"):]
+		end := strings.Index(rest, "</think>")
+		if end == -1 {
+			break
+		}
+		rest = rest[end+len("</think>"):]
 	}
-	return ""
+	return strings.TrimSpace(result)
 }
 
 func NewOpenAIProvider(apiKey string) *OpenAIProvider {
@@ -416,19 +439,42 @@ func (p *OpenAIProvider) convertMessages(messages []types.ChatMessage) []OpenAIM
 	return result
 }
 
+// truncateString 截断字符串到指定长度
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
 func (p *OpenAIProvider) convertMessage(msg types.ChatMessage) OpenAIMessage {
-	if msg.Role == "assistant" {
-		if data, err := json.Marshal(msg.Content); err == nil {
+			if msg.Role == "assistant" {
+			log.Printf("Converting assistant message, content: %s", msg.Content)
 			var toolCallsData map[string]interface{}
-			if json.Unmarshal(data, &toolCallsData); toolCallsData != nil {
+			if err := json.Unmarshal([]byte(msg.Content), &toolCallsData); err == nil {
+				log.Printf("Parsed toolCallsData: %+v", toolCallsData)
 				if tc, ok := toolCallsData["tool_calls"]; ok {
+					log.Printf("Found tool_calls: %+v", tc)
 					if tcArr, ok := tc.([]interface{}); ok {
 						toolCalls := make([]OpenAIToolCall, 0, len(tcArr))
 						for _, tcItem := range tcArr {
 							if tcMap, ok := tcItem.(map[string]interface{}); ok {
 								id, _ := tcMap["id"].(string)
-								name, _ := tcMap["name"].(string)
-								args, _ := tcMap["arguments"].(string)
+								log.Printf("Tool call ID from map: '%s'", id)
+								var name, args string
+								if funcObj, ok := tcMap["function"].(map[string]interface{}); ok {
+									name, _ = funcObj["name"].(string)
+									args, _ = funcObj["arguments"].(string)
+								} else {
+									name, _ = tcMap["name"].(string)
+									args, _ = tcMap["arguments"].(string)
+								}
+								log.Printf("Creating tool call with ID: '%s', Name: '%s'", id, name)
+								// 确保ID不为空
+								if id == "" {
+									log.Printf("WARNING: Empty tool call ID found, generating a new one")
+									id = fmt.Sprintf("call_%d", time.Now().UnixNano())
+								}
 								toolCalls = append(toolCalls, OpenAIToolCall{
 									ID:   &id,
 									Type: strPtr("function"),
@@ -439,42 +485,75 @@ func (p *OpenAIProvider) convertMessage(msg types.ChatMessage) OpenAIMessage {
 								})
 							}
 						}
+					var content *string
+					if c, ok := toolCallsData["content"].(string); ok {
+						content = &c
+					}
+					var reasoningContent *string
+					if rc, ok := toolCallsData["reasoning_content"].(string); ok {
+						reasoningContent = &rc
+					}
 
-						content, _ := toolCallsData["content"].(string)
-						var reasoningContent *string
-						if rc, ok := toolCallsData["reasoning_content"].(string); ok {
-							reasoningContent = &rc
-						}
-
-						return OpenAIMessage{
-							Role:             "assistant",
-							Content:          &content,
-							ToolCalls:        toolCalls,
-							ReasoningContent: reasoningContent,
-						}
+					log.Printf("Returning assistant message with %d tool calls", len(toolCalls))
+					return OpenAIMessage{
+						Role:             "assistant",
+						Content:          content,
+						ToolCalls:        toolCalls,
+						ReasoningContent: reasoningContent,
 					}
 				}
 			}
+		} else {
+			log.Printf("Failed to parse assistant message content: %v", err)
 		}
 	}
 
 	if msg.Role == "tool" {
-		if data, err := json.Marshal(msg.Content); err == nil {
-			var toolData map[string]interface{}
-			if json.Unmarshal(data, &toolData); toolData != nil {
-				var toolCallID, content string
-				if tcID, ok := toolData["tool_call_id"].(string); ok {
-					toolCallID = tcID
-				}
-				if c, ok := toolData["content"].(string); ok {
-					content = c
-				}
-				return OpenAIMessage{
-					Role:       "tool",
-					Content:    &content,
-					ToolCallID: &toolCallID,
+		log.Printf("Processing tool message, content length: %d", len(msg.Content))
+		// 直接解析消息内容 JSON
+		var toolData map[string]interface{}
+		if err := json.Unmarshal([]byte(msg.Content), &toolData); err == nil {
+			var toolCallID, content string
+			if tcID, ok := toolData["tool_call_id"].(string); ok {
+				toolCallID = tcID
+				log.Printf("Found tool_call_id: '%s'", toolCallID)
+			} else {
+				log.Printf("ERROR: tool_call_id not found in message content! Content: %s", truncateString(msg.Content, 200))
+				// 尝试从原始消息中提取
+				if len(msg.Content) > 0 {
+					// 从消息内容中提取 tool_call_id
+					var tempToolData map[string]interface{}
+					if err := json.Unmarshal([]byte(msg.Content), &tempToolData); err == nil {
+						if tcID, ok := tempToolData["tool_call_id"].(string); ok {
+							toolCallID = tcID
+							log.Printf("Successfully extracted tool_call_id from content: '%s'", toolCallID)
+						}
+					}
 				}
 			}
+			
+			if c, ok := toolData["content"].(string); ok {
+				content = c
+			}
+			
+			// 确保 toolCallID 不为空
+			if toolCallID == "" {
+				log.Printf("ERROR: Cannot create OpenAIMessage with empty tool_call_id! Message content: %s", truncateString(msg.Content, 200))
+				// 返回一个没有 tool_call_id 的消息，让上游处理
+				return OpenAIMessage{
+					Role:    "tool",
+					Content: &content,
+				}
+			}
+			
+			log.Printf("Creating OpenAIMessage with tool_call_id: '%s'", toolCallID)
+			return OpenAIMessage{
+				Role:       "tool",
+				Content:    &content,
+				ToolCallID: &toolCallID,
+			}
+		} else {
+			log.Printf("ERROR: Failed to parse tool message content as JSON: %v", err)
 		}
 	}
 

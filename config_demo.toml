@@ -1,0 +1,449 @@
+# OpenCode / Big Pickle 配置（免费模型）
+#default_provider = "opencode"
+#default_model = "big-pickle"
+#api_key = "your-opencode-api-key"
+
+# Ollama 本地模型配置（当前使用）
+#default_provider = "ollama"
+#default_model = "llama3.1-fast:latest"
+#ollama_host = "http://localhost:11434"
+
+# OpenRouter 配置（备用）
+#default_provider = "openrouter"
+#default_model = "arcee-ai/trinity-large-preview:free"
+#default_model = "deepseek/deepseek-chat:free"
+#default_model = "google/gemma-3-4b-it:free"  # 404 不可用
+#default_model = "mistralai/mistral-7b-instruct:free"  # 404 不可用
+#default_model = "meta-llama/llama-3.1-8b-instruct:free"
+#default_model = "nvidia/llama-3.1-nemotron-70b-instruct:free"
+#api_key = "open_router_key"
+
+# Gitee AI 配置（已禁用）
+#default_provider = "custom:https://ai.gitee.com/v1"
+#default_model = "GLM-4.7-Flash"
+#default_model = "DeepSeek-R1-Distill-Qwen-14B"
+#default_model = "Qwen2.5-72B-Instruct"
+#api_key = "gitee_ai_key"
+
+# MinMax 配置（当前使用）
+default_provider = "custom:https://api.minimaxi.com/v1"
+default_model = "MiniMax-M2.5"
+api_key = "your-minimax-api-key"
+
+# 阿里云百炼配置（Coding Plan Lite 支持）
+#default_provider = "bailian"
+#default_model = "qwen-plus"
+#default_model = "qwen-coder-plus"
+#default_model = "qwen-coder-turbo"
+#default_model = "qwen-max"
+#default_model = "qwen-turbo"
+#default_model = "qwen-flash"
+#api_key = "your-bailian-api-key"
+
+# Ollama 本地模型配置（备用）
+#default_provider = "ollama"
+#default_model = "llama3.1:8b-instruct-q4_0"
+#default_model = "qwen2.5:14b"
+#ollama_host = "http://localhost:11434"
+
+default_temperature = 0.7
+model_routes = []
+embedding_routes = []
+
+[model_providers]
+
+[observability]
+backend = "none"
+runtime_trace_mode = "none"
+runtime_trace_path = "state/runtime-trace.jsonl"
+runtime_trace_max_entries = 200
+
+[autonomy]
+level = "supervised"
+workspace_only = true
+allowed_commands = [
+    "git",
+    "npm",
+    "cargo",
+    "ls",
+    "cat",
+    "grep",
+    "find",
+    "echo",
+    "pwd",
+    "wc",
+    "head",
+    "tail",
+    "date",
+]
+forbidden_paths = [
+    "/etc",
+    "/root",
+    "/home",
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/opt",
+    "/boot",
+    "/dev",
+    "/proc",
+    "/sys",
+    "/var",
+    "/tmp",
+    "~/.ssh",
+    "~/.gnupg",
+    "~/.aws",
+    "~/.config",
+]
+max_actions_per_hour = 20
+max_cost_per_day_cents = 500
+require_approval_for_medium_risk = false
+block_high_risk_commands = true
+shell_env_passthrough = []
+auto_approve = [
+    "memory_store",
+    "answer",
+    "file_write",
+    "content_search",
+    "http_request",
+    "file_read",
+]
+always_ask = [
+    "memory_store",
+    "memory_recall",
+    "file_read",
+]
+allowed_roots = []
+non_cli_excluded_tools = ["shell"]
+
+[security.sandbox]
+backend = "auto"
+firejail_args = []
+
+[security.resources]
+max_memory_mb = 512
+max_cpu_time_seconds = 60
+max_subprocesses = 10
+memory_monitoring = true
+
+[security.audit]
+enabled = true
+log_path = "audit.log"
+max_size_mb = 100
+sign_events = false
+
+[security.otp]
+enabled = false
+method = "totp"
+token_ttl_secs = 30
+cache_valid_secs = 300
+gated_actions = [
+    "file_write",
+    "browser_open",
+    "browser",
+    "memory_forget",
+]
+gated_domains = []
+gated_domain_categories = []
+
+[security.estop]
+enabled = false
+state_file = "~/.goclaw/estop-state.json"
+require_otp_to_resume = true
+
+[security.syscall_anomaly]
+enabled = false
+baseline_syscalls = []
+alert_threshold = 10
+block_suspicious = false
+max_alerts_per_minute = 5
+alert_cooldown_secs = 60
+log_path = "syscall-anomalies.log"
+alert_on_unknown_syscall = true
+strict_mode = false
+max_denied_events_per_minute = 5
+max_total_events_per_minute = 120
+
+[runtime]
+kind = "native"
+
+[runtime.docker]
+image = "alpine:3.20"
+network = "none"
+memory_limit_mb = 512
+cpu_limit = 1.0
+read_only_rootfs = true
+mount_workspace = true
+allowed_workspace_roots = []
+
+[runtime.wasm]
+enabled = false
+fuel_limit = 1000000000
+memory_limit_mb = 64
+max_module_size_mb = 10
+tools_dir = ""
+allowed_hosts = []
+allow_workspace_read = false
+allow_workspace_write = false
+
+[runtime.wasm.security]
+module_hash_policy = "Disabled"
+capability_escalation_mode = "Disabled"
+require_workspace_relative_tools_dir = false
+strict_host_validation = false
+
+[runtime.wasm.security.module_sha256]
+
+[reliability]
+provider_retries = 1
+provider_backoff_ms = 200
+fallback_providers = []
+api_keys = ["your-minimax-api-key"]
+channel_initial_backoff_secs = 1
+channel_max_backoff_secs = 10
+scheduler_poll_secs = 2
+scheduler_retries = 1
+
+[reliability.model_fallbacks]
+
+[scheduler]
+enabled = true
+max_tasks = 64
+max_concurrent = 4
+
+[agent]
+compact_context = true
+max_tool_iterations = 15
+max_history_messages = 20
+parallel_tools = false
+tool_dispatcher = "auto"
+
+[skills]
+open_skills_enabled = false
+prompt_injection_mode = "full"
+
+[query_classification]
+enabled = false
+rules = []
+
+[heartbeat]
+enabled = false
+interval_minutes = 30
+
+[cron]
+enabled = true
+max_run_history = 50
+
+[channels_config]
+cli = true
+message_timeout_secs = 60
+# email = false
+# 
+# [channels_config.email]
+# imap_host = "imap.qq.com"
+# imap_port = 993
+# imap_folder = "INBOX"
+# smtp_host = "smtp.qq.com"
+# smtp_port = 465
+# smtp_tls = true
+# username = "270901361@qq.com"
+# password = "ijiefpygofrqbggf"
+# from_address = "270901361@qq.com"
+# idle_timeout_secs = 30
+# disable_idle = true
+# allowed_senders = []
+
+[channels_config.dingtalk]
+enable = false
+client_id = "your-dingtalk-client-id"
+client_secret = "your-dingtalk-client-secret"
+allowed_users = ["*"]
+
+[channels_config.lark]
+enable = false
+app_id = "your-lark-app-id"
+app_secret = "your-lark-app-secret"
+allowed_users = ["*"]
+
+[channels_config.wecom]
+enable = true
+bot_id = "your-wecom-bot-id"
+bot_secret = "your-wecom-bot-secret"
+allowed_users = ["*"]
+default_to = "your-default-recipient" 
+
+[memory]
+backend = "sqlite"
+auto_save = true
+hygiene_enabled = true
+archive_after_days = 7
+purge_after_days = 30
+conversation_retention_days = 30
+embedding_provider = "none"
+embedding_model = "text-embedding-3-small"
+embedding_dimensions = 1536
+vector_weight = 0.7
+keyword_weight = 0.3
+min_relevance_score = 0.4
+embedding_cache_size = 10000
+chunk_max_tokens = 512
+response_cache_enabled = false
+response_cache_ttl_minutes = 60
+response_cache_max_entries = 5000
+snapshot_enabled = false
+snapshot_on_hygiene = false
+auto_hydrate = true
+
+[memory.qdrant]
+collection = "zeroclaw_memories"
+
+[storage.provider.config]
+provider = ""
+schema = "public"
+table = "memories"
+
+[tunnel]
+provider = "none"
+
+[gateway]
+port = 42617
+host = "127.0.0.1"
+locale = "zh-CN"
+require_pairing = false
+allow_public_bind = false
+paired_tokens = []
+pair_rate_limit_per_minute = 10
+webhook_rate_limit_per_minute = 60
+trust_forwarded_headers = false
+rate_limit_max_keys = 10000
+idempotency_ttl_secs = 300
+idempotency_max_keys = 10000
+
+[composio]
+enabled = false
+entity_id = "default"
+
+[secrets]
+encrypt = false
+
+[browser]
+enabled = false
+allowed_domains = []
+backend = "agent_browser"
+native_headless = true
+native_webdriver_url = "http://127.0.0.1:9515"
+
+[browser.computer_use]
+endpoint = "http://127.0.0.1:8787/v1/actions"
+timeout_ms = 15000
+allow_remote_endpoint = false
+window_allowlist = []
+
+[http_request]
+enabled = true
+allowed_domains = ["oapi.dingtalk.com", "api.tianqiapi.com"]
+max_response_size = 1000000
+timeout_secs = 30
+
+[multimodal]
+max_images = 4
+max_image_size_mb = 5
+allow_remote_fetch = false
+
+[web_fetch]
+enabled = false
+allowed_domains = ["*"]
+blocked_domains = []
+max_response_size = 500000
+timeout_secs = 30
+
+[web_search]
+enabled = false
+provider = "duckduckgo"
+max_results = 5
+timeout_secs = 15
+
+[proxy]
+enabled = false
+no_proxy = []
+scope = "zeroclaw"
+services = []
+
+[identity]
+format = "aieos"
+aieos_path = "identity.json"
+
+[cost]
+enabled = false
+daily_limit_usd = 10.0
+monthly_limit_usd = 100.0
+warn_at_percent = 80
+allow_override = false
+
+[cost.prices."openai/gpt-4o-mini"]
+input = 0.15
+output = 0.6
+
+[cost.prices."google/gemini-1.5-pro"]
+input = 1.25
+output = 5.0
+
+[cost.prices."anthropic/claude-sonnet-4-20250514"]
+input = 3.0
+output = 15.0
+
+[cost.prices."google/gemini-2.0-flash"]
+input = 0.1
+output = 0.4
+
+[cost.prices."anthropic/claude-3.5-sonnet"]
+input = 3.0
+output = 15.0
+
+[cost.prices."anthropic/claude-opus-4-20250514"]
+input = 15.0
+output = 75.0
+
+[cost.prices."openai/gpt-4o"]
+input = 5.0
+output = 15.0
+
+[cost.prices."anthropic/claude-3-haiku"]
+input = 0.25
+output = 1.25
+
+[cost.prices."openai/o1-preview"]
+input = 15.0
+output = 60.0
+
+[peripherals]
+enabled = false
+boards = []
+
+[agents]
+
+[hooks]
+enabled = true
+
+[hooks.builtin]
+command_logger = false
+
+[hardware]
+enabled = false
+transport = "None"
+baud_rate = 115200
+workspace_datasheets = false
+
+[transcription]
+enabled = false
+api_url = "https://api.groq.com/openai/v1/audio/transcriptions"
+model = "whisper-large-v3-turbo"
+max_duration_secs = 120
+
+[wechat]
+enabled = false
+app_id = "your-wechat-app-id"
+app_secret = "your-wechat-app-secret"
+redirect_uri = "https://your-domain.com/api/auth/wechat/callback"
+scope = "snsapi_login"

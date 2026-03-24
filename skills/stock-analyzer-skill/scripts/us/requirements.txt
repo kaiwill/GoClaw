@@ -1,0 +1,11 @@
+# 美股/加密货币分析依赖 (v5.0)
+# 使用 Yahoo Finance 数据源
+
+# 核心依赖
+yfinance>=0.2.40
+pandas>=2.0.0
+
+# 情绪分析依赖
+fear-and-greed>=0.4
+edgartools>=2.0.0
+feedparser>=6.0.0

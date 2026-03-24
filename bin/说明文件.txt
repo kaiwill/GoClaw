@@ -1,0 +1,14 @@
+1.需要把.goclaw放到c:\users\用户\ 目录下
+
+如果要配置自己的AI key按下面步骤，或者查看 https://github.com/lj7788/GoClaw/blob/main/README.md
+2.可以https://ai.gitee.com/ 申请APIKEY，默认用lijun的
+3.修改.goclaw\config.toml 中的26行
+
+4.微信机器人 第一步扫码命令
+goclaw-windows-amd64.exe channel weixin login
+会弹出二维码，用微信扫描，扫完可以关闭
+
+5.启动goclaw
+goclaw-windows-amd64.exe daemon
+
+6.可以在微信中发消息，日志中应该可以看到

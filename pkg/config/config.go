@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,15 +14,17 @@ type Config struct {
 	Provider    ProviderConfig
 	Memory      MemoryConfig
 	Gateway     GatewayConfig
+	Auth        AuthConfig
 	Channels    map[string]ChannelConfig
 	ChannelsRaw string // Raw TOML content for channels
 	SkillsDir   string // Skills directory path
 }
 
 type AgentConfig struct {
-	SystemPrompt string
-	MaxTokens    int
-	Temperature  float64
+	SystemPrompt        string
+	MaxTokens           int
+	Temperature          float64
+	MaxToolIterations    int
 }
 
 type ProviderConfig struct {
@@ -32,14 +35,27 @@ type ProviderConfig struct {
 }
 
 type MemoryConfig struct {
-	Backend string
-	Config  map[string]string
+	Backend   string
+	Config    map[string]string
+	AutoSave  bool
 }
 
 type GatewayConfig struct {
-	Host      string
-	Port      int
-	StaticDir string // Static files directory for web interface
+	Host           string
+	Port           int
+	StaticDir      string // Static files directory for web interface
+	RequirePairing bool   // 是否需要配对码
+	PairedTokens   []string // 已配对的 token 列表
+	Locale         string // 语言设置
+}
+
+type AuthConfig struct {
+	EnableLogin      bool   // 是否启用登录功能
+	EnableWechatLogin bool   // 是否启用微信登录
+	EnableAudit      bool   // 是否启用管理员审核
+	WechatAppID      string // 微信AppID
+	WechatAppSecret  string // 微信AppSecret
+	WechatCallbackURL string // 微信回调地址
 }
 
 type ChannelConfig map[string]string
@@ -51,24 +67,39 @@ type DingTalkConfig struct {
 	AllowedUsers []string
 }
 
+type WecomConfig struct {
+	BotID      string
+	BotSecret  string
+	DefaultTo  string
+}
+
+type WeixinConfig struct {
+	Token       string
+	BaseURL     string
+	CDNBaseURL  string
+	AccountID   string
+	AllowedUsers []string
+}
+
 func Default() *Config {
 	homeDir, _ := os.UserHomeDir()
 	defaultSkillsDir := "."
 	if homeDir != "" {
-		defaultSkillsDir = filepath.Join(homeDir, ".zeroclaw", "workspace", "skills")
+		defaultSkillsDir = filepath.Join(homeDir, ".goclaw", "workspace", "skills")
 	}
 
 	// Set default static directory
 	defaultStaticDir := "./web/dist"
 	if homeDir != "" {
-		defaultStaticDir = filepath.Join(homeDir, ".zeroclaw", "goclaw", "web", "dist")
+		defaultStaticDir = filepath.Join(homeDir, ".goclaw", "web", "dist")
 	}
 
 	return &Config{
 		Agent: AgentConfig{
-			SystemPrompt: "You are GoClaw, a helpful AI assistant.",
-			MaxTokens:    4096,
-			Temperature:  0.7,
+			SystemPrompt:        "You are GoClaw, a helpful AI assistant.",
+			MaxTokens:           4096,
+			Temperature:          0.7,
+			MaxToolIterations:    15,
 		},
 		Provider: ProviderConfig{
 			Name:  "openai",
@@ -82,6 +113,12 @@ func Default() *Config {
 			Host:      "0.0.0.0",
 			Port:      8080,
 			StaticDir: defaultStaticDir,
+			Locale:    "en-US",
+		},
+		Auth: AuthConfig{
+			EnableLogin:      false, // 默认禁用登录功能
+			EnableWechatLogin: false, // 默认禁用微信登录
+			EnableAudit:      false, // 默认禁用管理员审核
 		},
 		Channels:  make(map[string]ChannelConfig),
 		SkillsDir: defaultSkillsDir,
@@ -103,60 +140,145 @@ func Load(configDir string) (*Config, error) {
 	cfg := Default()
 	content := string(data)
 
-	// Parse top-level keys
 	cfg.Provider.Name = parseTomlString(content, "default_provider", cfg.Provider.Name)
 	cfg.Provider.Model = parseTomlString(content, "default_model", cfg.Provider.Model)
 	cfg.Provider.APIKey = parseTomlString(content, "api_key", "")
 	cfg.Provider.BaseURL = parseTomlString(content, "base_url", "")
 	cfg.Agent.Temperature = parseTomlFloat(content, "default_temperature", cfg.Agent.Temperature)
+	cfg.Agent.MaxToolIterations = parseTomlInt(content, "max_tool_iterations", cfg.Agent.MaxToolIterations)
 	cfg.SkillsDir = parseTomlString(content, "skills_dir", cfg.SkillsDir)
 	cfg.Gateway.StaticDir = parseTomlString(content, "static_dir", cfg.Gateway.StaticDir)
+	cfg.Gateway.Port = parseTomlNestedInt(content, "gateway.port", cfg.Gateway.Port)
+	cfg.Gateway.RequirePairing = parseTomlNestedString(content, "gateway.require_pairing", "false") == "true"
+	cfg.Gateway.PairedTokens = parseTomlNestedStringArray(content, "gateway.paired_tokens", cfg.Gateway.PairedTokens)
+	cfg.Gateway.Locale = parseTomlNestedString(content, "gateway.locale", "en-US")
 
-	// If provider name contains "custom:", extract the base URL
+	cfg.Memory.Backend = parseTomlNestedString(content, "memory.backend", cfg.Memory.Backend)
+	cfg.Memory.Config = parseMemoryConfig(content)
+	cfg.Memory.AutoSave = parseTomlNestedString(content, "memory.auto_save", "false") == "true"
+
 	if strings.HasPrefix(cfg.Provider.Name, "custom:") {
 		cfg.Provider.BaseURL = strings.TrimPrefix(cfg.Provider.Name, "custom:")
 	}
 
-	// Parse channels_config sections
+	// 解析认证配置
+	cfg.Auth.EnableLogin = parseTomlNestedString(content, "auth.enable_login", "false") == "true"
+	cfg.Auth.EnableWechatLogin = parseTomlNestedString(content, "wechat.enabled", "false") == "true"
+	cfg.Auth.EnableAudit = parseTomlNestedString(content, "auth.enable_audit", "false") == "true"
+	cfg.Auth.WechatAppID = parseTomlNestedString(content, "wechat.app_id", "")
+	cfg.Auth.WechatAppSecret = parseTomlNestedString(content, "wechat.app_secret", "")
+	cfg.Auth.WechatCallbackURL = parseTomlNestedString(content, "wechat.redirect_uri", "")
+
 	cfg.Channels = parseChannelsConfig(content)
 
 	return cfg, nil
+}
+
+// parseMemoryConfig parses [memory] section
+func parseMemoryConfig(content string) map[string]string {
+	config := make(map[string]string)
+
+	sectionRe := regexp.MustCompile(`(?m)^\[memory\]`)
+	match := sectionRe.FindStringIndex(content)
+
+	if match == nil {
+		return config
+	}
+
+	start := match[1]
+	
+	nextSectionRe := regexp.MustCompile(`(?m)^\[`)
+	nextMatch := nextSectionRe.FindStringIndex(content[start:])
+	if nextMatch != nil {
+		end := start + nextMatch[0]
+		sectionContent := content[start:end]
+		kvRe := regexp.MustCompile(`(?m)^(\w+)\s*=\s*(.+)$`)
+		kvMatches := kvRe.FindAllStringSubmatch(sectionContent, -1)
+		for _, kv := range kvMatches {
+			key := kv[1]
+			value := strings.Trim(strings.TrimSpace(kv[2]), "\"'")
+			config[key] = value
+		}
+	} else {
+		sectionContent := content[start:]
+		kvRe := regexp.MustCompile(`(?m)^(\w+)\s*=\s*(.+)$`)
+		kvMatches := kvRe.FindAllStringSubmatch(sectionContent, -1)
+		for _, kv := range kvMatches {
+			key := kv[1]
+			value := strings.Trim(strings.TrimSpace(kv[2]), "\"'")
+			config[key] = value
+		}
+	}
+
+	return config
 }
 
 // parseChannelsConfig parses [channels_config.XXX] sections
 func parseChannelsConfig(content string) map[string]ChannelConfig {
 	channels := make(map[string]ChannelConfig)
 
-	// Find all [channels_config.XXX] sections
-	sectionRe := regexp.MustCompile(`(?m)^\[channels_config\.(\w+)\]`)
-	matches := sectionRe.FindAllStringSubmatchIndex(content, -1)
+	lines := strings.Split(content, "\n")
+	var currentChannel string
+	var currentConfig ChannelConfig
 
-	for i, match := range matches {
-		channelName := content[match[2]:match[3]]
-
-		// Get the section content (from section start to next section or EOF)
-		start := match[1]
-		end := len(content)
-		if i < len(matches)-1 {
-			end = matches[i+1][0]
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
 		}
 
-		sectionContent := content[start:end]
+		// Check for section header
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			// Save previous channel config
+			if currentChannel != "" && len(currentConfig) > 0 {
+				channels[currentChannel] = currentConfig
+				log.Printf("Config: Parsed channel config for %s", currentChannel)
+			}
 
-		// Parse key-value pairs in the section
-		cfg := make(ChannelConfig)
-		kvRe := regexp.MustCompile(`(?m)^(\w+)\s*=\s*(.+)$`)
-		kvMatches := kvRe.FindAllStringSubmatch(sectionContent, -1)
-
-		for _, kv := range kvMatches {
-			key := kv[1]
-			value := strings.Trim(strings.TrimSpace(kv[2]), "\"'")
-			cfg[key] = value
+			// Parse new section
+			sectionName := strings.Trim(line, "[]")
+			if strings.HasPrefix(sectionName, "channels_config.") {
+				// Check if it's a specific channel config (channels_config.xxx) or general config (channels_config)
+				if sectionName == "channels_config" {
+					// Skip general channels_config section
+					log.Printf("Config: Skipping general channels_config section")
+					currentChannel = ""
+					currentConfig = nil
+				} else {
+					// Parse specific channel config
+					currentChannel = strings.TrimPrefix(sectionName, "channels_config.")
+					currentConfig = make(ChannelConfig)
+					log.Printf("Config: Starting to parse channel config for %s", currentChannel)
+				}
+			} else {
+				currentChannel = ""
+				currentConfig = nil
+			}
+			continue
 		}
 
-		if len(cfg) > 0 {
-			channels[channelName] = cfg
+		// Parse key-value pairs
+		if currentChannel != "" && currentConfig != nil {
+			kvParts := strings.SplitN(line, "=", 2)
+			if len(kvParts) == 2 {
+				key := strings.TrimSpace(kvParts[0])
+				value := strings.TrimSpace(kvParts[1])
+				value = strings.Trim(value, "\"'")
+				currentConfig[key] = value
+				log.Printf("Config: %s.%s = %s", currentChannel, key, value)
+			}
 		}
+	}
+
+	// Save last channel config
+	if currentChannel != "" && len(currentConfig) > 0 {
+		channels[currentChannel] = currentConfig
+		log.Printf("Config: Parsed channel config for %s", currentChannel)
+	}
+
+	log.Printf("Config: Total channels parsed: %d", len(channels))
+	for name := range channels {
+		log.Printf("Config: Channel %s", name)
 	}
 
 	return channels
@@ -173,9 +295,7 @@ func (c *Config) GetDingTalkConfig() *DingTalkConfig {
 	dt.ClientID = cfg["client_id"]
 	dt.ClientSecret = cfg["client_secret"]
 
-	// Parse allowed_users
 	if users, ok := cfg["allowed_users"]; ok {
-		// Remove brackets and parse comma-separated values
 		users = strings.Trim(users, "[]")
 		for _, u := range strings.Split(users, ",") {
 			u = strings.TrimSpace(strings.Trim(u, "\"'"))
@@ -186,6 +306,45 @@ func (c *Config) GetDingTalkConfig() *DingTalkConfig {
 	}
 
 	return dt
+}
+
+func (c *Config) GetWecomConfig() *WecomConfig {
+	cfg, ok := c.Channels["wecom"]
+	if !ok {
+		return nil
+	}
+
+	return &WecomConfig{
+		BotID:     cfg["bot_id"],
+		BotSecret: cfg["bot_secret"],
+		DefaultTo: cfg["default_to"],
+	}
+}
+
+func (c *Config) GetWeixinConfig() *WeixinConfig {
+	cfg, ok := c.Channels["weixin"]
+	if !ok {
+		return nil
+	}
+
+	wx := &WeixinConfig{
+		Token:     cfg["token"],
+		BaseURL:   cfg["base_url"],
+		CDNBaseURL: cfg["cdn_base_url"],
+		AccountID: cfg["account_id"],
+	}
+
+	if users, ok := cfg["allowed_users"]; ok {
+		users = strings.Trim(users, "[]")
+		for _, u := range strings.Split(users, ",") {
+			u = strings.TrimSpace(strings.Trim(u, "\"'"))
+			if u != "" {
+				wx.AllowedUsers = append(wx.AllowedUsers, u)
+			}
+		}
+	}
+
+	return wx
 }
 
 // HasChannels returns true if any channel is configured
@@ -201,6 +360,46 @@ func parseTomlString(content, key, defaultValue string) string {
 	if len(matches) > 1 {
 		return strings.TrimSpace(matches[1])
 	}
+	return defaultValue
+}
+
+// parseTomlNestedString parses a nested key like "memory.backend" from TOML content
+func parseTomlNestedString(content, key, defaultValue string) string {
+	parts := strings.Split(key, ".")
+	if len(parts) != 2 {
+		return parseTomlString(content, key, defaultValue)
+	}
+
+	section := parts[0]
+	field := parts[1]
+
+	// Find the section first
+	sectionRe := regexp.MustCompile(`(?m)^\[` + regexp.QuoteMeta(section) + `\]`)
+	sectionMatch := sectionRe.FindStringIndex(content)
+	if sectionMatch == nil {
+		return defaultValue
+	}
+
+	start := sectionMatch[1]
+
+	// Find the next section
+	nextSectionRe := regexp.MustCompile(`(?m)^\[`)
+	nextMatch := nextSectionRe.FindStringIndex(content[start:])
+	var sectionContent string
+	if nextMatch != nil {
+		end := start + nextMatch[0]
+		sectionContent = content[start:end]
+	} else {
+		sectionContent = content[start:]
+	}
+
+	// Now find the field in the section
+	fieldRe := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(field) + `\s*=\s*["']?([^"'\n\r]+)["']?\s*$`)
+	fieldMatches := fieldRe.FindStringSubmatch(sectionContent)
+	if len(fieldMatches) > 1 {
+		return strings.TrimSpace(fieldMatches[1])
+	}
+
 	return defaultValue
 }
 
@@ -242,7 +441,103 @@ func (c *Config) GetSkillsDir() string {
 	// Fallback to default
 	homeDir, _ := os.UserHomeDir()
 	if homeDir != "" {
-		return filepath.Join(homeDir, ".zeroclaw", "workspace", "skills")
+		return filepath.Join(homeDir, ".goclaw", "workspace", "skills")
 	}
 	return "."
+}
+
+// GetAuth returns the authentication configuration
+func (c *Config) GetAuth() *AuthConfig {
+	return &c.Auth
+}
+
+// parseTomlNestedInt parses a nested integer key like "gateway.port" from TOML content
+func parseTomlNestedInt(content, key string, defaultValue int) int {
+	parts := strings.Split(key, ".")
+	if len(parts) != 2 {
+		return parseTomlInt(content, key, defaultValue)
+	}
+
+	section := parts[0]
+	field := parts[1]
+
+	sectionRe := regexp.MustCompile(`(?m)^\[` + regexp.QuoteMeta(section) + `\]`)
+	sectionMatch := sectionRe.FindStringIndex(content)
+	if sectionMatch == nil {
+		return defaultValue
+	}
+
+	start := sectionMatch[1]
+
+	nextSectionRe := regexp.MustCompile(`(?m)^\[`)
+	nextMatch := nextSectionRe.FindStringIndex(content[start:])
+	var sectionContent string
+	if nextMatch != nil {
+		end := start + nextMatch[0]
+		sectionContent = content[start:end]
+	} else {
+		sectionContent = content[start:]
+	}
+
+	fieldRe := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(field) + `\s*=\s*(\d+)`)
+	fieldMatches := fieldRe.FindStringSubmatch(sectionContent)
+	if len(fieldMatches) > 1 {
+		val, err := strconv.Atoi(fieldMatches[1])
+		if err == nil {
+			return val
+		}
+	}
+
+	return defaultValue
+}
+
+// parseTomlNestedStringArray parses a nested string array key like "gateway.paired_tokens" from TOML content
+func parseTomlNestedStringArray(content, key string, defaultValue []string) []string {
+	parts := strings.Split(key, ".")
+	if len(parts) != 2 {
+		return defaultValue
+	}
+
+	section := parts[0]
+	field := parts[1]
+
+	sectionRe := regexp.MustCompile(`(?m)^\[` + regexp.QuoteMeta(section) + `\]`)
+	sectionMatch := sectionRe.FindStringIndex(content)
+	if sectionMatch == nil {
+		return defaultValue
+	}
+
+	start := sectionMatch[1]
+
+	nextSectionRe := regexp.MustCompile(`(?m)^\[`)
+	nextMatch := nextSectionRe.FindStringIndex(content[start:])
+	var sectionContent string
+	if nextMatch != nil {
+		end := start + nextMatch[0]
+		sectionContent = content[start:end]
+	} else {
+		sectionContent = content[start:]
+	}
+
+	fieldRe := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(field) + `\s*=\s*\[(.+)\]`)
+	fieldMatches := fieldRe.FindStringSubmatch(sectionContent)
+	if len(fieldMatches) > 1 {
+		arrayContent := strings.TrimSpace(fieldMatches[1])
+		if arrayContent == "" {
+			return []string{}
+		}
+
+		var result []string
+		items := strings.Split(arrayContent, ",")
+		for _, item := range items {
+			item = strings.TrimSpace(item)
+			item = strings.Trim(item, "\"'")
+			if item != "" {
+				result = append(result, item)
+			}
+		}
+		return result
+	}
+
+	return defaultValue
 }

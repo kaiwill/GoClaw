@@ -9,6 +9,8 @@ export interface StatusResponse {
   paired: boolean;
   channels: Record<string, boolean>;
   health: HealthSnapshot;
+  wechatlogin: boolean;
+  loginMode: 'wechat' | 'paired' | 'none';
 }
 
 export interface HealthSnapshot {
